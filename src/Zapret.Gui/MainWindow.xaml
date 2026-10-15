@@ -1,0 +1,191 @@
+<Window x:Class="Zapret.Gui.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+ xmlns:services="clr-namespace:Zapret.Gui.Services"
+ Title="Zapret · Конфигуратор" Width="760" Height="760" MinWidth="720" MinHeight="720"
+ WindowStartupLocation="CenterScreen" Style="{StaticResource MaterialDesignWindow}"
+ FontFamily="{StaticResource M3.Font}" FontSize="14"
+ Background="{DynamicResource M3.Surface}" Foreground="{DynamicResource M3.OnSurface}"
+ Loaded="OnLoaded" Closing="OnClosing" UseLayoutRounding="True">
+ <Window.Resources>
+  <Style x:Key="StatusIcon" TargetType="md:PackIcon">
+   <Setter Property="Kind" Value="ShieldOutline"/>
+   <Setter Property="Foreground" Value="{DynamicResource M3.OnSurfaceVariant}"/>
+   <Setter Property="Width" Value="28"/><Setter Property="Height" Value="28"/>
+   <Style.Triggers>
+    <DataTrigger Binding="{Binding CurrentState}" Value="{x:Static services:ServiceState.Running}">
+     <Setter Property="Kind" Value="ShieldCheckOutline"/><Setter Property="Foreground" Value="{DynamicResource M3.Success}"/>
+    </DataTrigger>
+    <DataTrigger Binding="{Binding CurrentState}" Value="{x:Static services:ServiceState.Stopped}">
+     <Setter Property="Kind" Value="PauseCircleOutline"/><Setter Property="Foreground" Value="{DynamicResource M3.Warning}"/>
+    </DataTrigger>
+   </Style.Triggers>
+  </Style>
+ </Window.Resources>
+ <Grid x:Name="LayoutRoot" Margin="24">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+  </Grid.RowDefinitions>
+  <!-- Small top app bar. Theme is an icon action; the service preference uses a switch. -->
+  <Grid Margin="0,0,0,16">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+   <Border Width="40" Height="40" CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Center"
+    Background="{DynamicResource M3.PrimaryContainer}">
+    <md:PackIcon Kind="ShieldCheckOutline" Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+     Foreground="{DynamicResource M3.OnPrimaryContainer}"/>
+   </Border>
+   <StackPanel Grid.Column="1">
+    <TextBlock Text="Zapret" Style="{StaticResource M3.Headline}"/>
+    <TextBlock Text="Настройка подключения" Style="{StaticResource M3.Supporting}" Margin="0,2,0,0"/>
+   </StackPanel>
+   <ToggleButton Grid.Column="2" IsChecked="{Binding IsDark}" Style="{StaticResource M3.ThemeToggle}"
+    ToolTip="Сменить светлую / тёмную тему" AutomationProperties.Name="Тёмная тема"/>
+  </Grid>
+
+  <TabControl Grid.Row="1" Style="{StaticResource M3.Tabs}" IsEnabled="{Binding CanInteract}">
+   <TabItem AutomationProperties.Name="Служба">
+    <TabItem.Header>
+     <StackPanel><md:PackIcon Kind="Tune" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+      <TextBlock Text="Служба" HorizontalAlignment="Center"/></StackPanel>
+    </TabItem.Header>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+     <StackPanel>
+      <!-- Filled card: surface-container-highest with on-surface content, no shadow. -->
+      <Border Background="{DynamicResource M3.SurfaceContainerHighest}" CornerRadius="12" Padding="16" Margin="0,0,0,8">
+       <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+        <StackPanel>
+         <TextBlock Text="Служба zapret" Style="{StaticResource M3.Label}"/>
+         <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
+          <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+          <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
+         </StackPanel>
+         <TextBlock Text="{Binding ActivePreset}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Button Grid.Column="1" Style="{StaticResource M3.IconButton}" VerticalAlignment="Top"
+         Command="{Binding RefreshCommand}" ToolTip="Обновить статус, стратегии и списки" AutomationProperties.Name="Обновить статус и список стратегий">
+         <md:PackIcon Kind="Refresh" Width="24" Height="24"/>
+        </Button>
+       </Grid>
+      </Border>
+      <!-- Outlined card is the less prominent configuration area. -->
+      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
+       BorderThickness="1" CornerRadius="12" Padding="16">
+       <StackPanel>
+        <TextBlock Text="Стратегия обхода" Style="{StaticResource M3.Title}"/>
+        <Grid Margin="0,20,0,4">
+         <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name"
+          Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Стратегия обхода"/>
+         <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
+          <TextBlock Text="Пресет" Style="{StaticResource M3.Label}"/>
+         </Border>
+        </Grid>
+        <TextBlock Text="При применении текущая служба будет заменена." Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
+       </StackPanel>
+      </Border>
+      <Grid Margin="16,16,12,8">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
+       <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="Закрыть после применения" Style="{StaticResource M3.Title}"/>
+        <TextBlock Text="Служба продолжит работать самостоятельно" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,2,12,0"/>
+       </StackPanel>
+       <ToggleButton Grid.Column="1" IsChecked="{Binding CloseAfterApply}" Style="{StaticResource M3.Switch}"
+        VerticalAlignment="Center" HorizontalAlignment="Right" AutomationProperties.Name="Закрыть после применения"/>
+      </Grid>
+      <TextBlock Text="{Binding FileSummary}" Style="{StaticResource M3.Label}" Margin="16,8,0,4"/>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
+   <TabItem AutomationProperties.Name="Списки доменов">
+    <TabItem.Header>
+     <StackPanel><md:PackIcon Kind="FormatListBulleted" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+      <TextBlock Text="Списки доменов" HorizontalAlignment="Center"/></StackPanel>
+    </TabItem.Header>
+    <Grid>
+     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+     </Grid.RowDefinitions>
+     <StackPanel Margin="0,0,0,20">
+      <TextBlock Text="Домены и исключения" Style="{StaticResource M3.Title}"/>
+      <TextBlock Text="Редактируйте список или добавьте отдельный домен." Style="{StaticResource M3.Supporting}" Margin="0,4,0,0"/>
+     </StackPanel>
+     <Grid Grid.Row="1" Margin="0,0,0,16">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Grid>
+       <ComboBox ItemsSource="{Binding Hostlists}" SelectedItem="{Binding SelectedHostlist}" DisplayMemberPath="Name"
+        Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Файл списка"/>
+       <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
+        <TextBlock Text="Файл списка" Style="{StaticResource M3.Label}"/>
+       </Border>
+      </Grid>
+      <Button Grid.Column="1" Content="Открыть" Command="{Binding LoadHostlistCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+     </Grid>
+     <Grid Grid.Row="2" MinHeight="100">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <TextBlock Text="{Binding LoadedFileName}" Style="{StaticResource M3.Label}" Margin="0,0,0,8"/>
+      <Border Grid.Row="1" CornerRadius="4" BorderBrush="{DynamicResource M3.Outline}" BorderThickness="1"
+       Background="{DynamicResource M3.SurfaceContainerLowest}" Padding="12">
+       <TextBox Text="{Binding HostlistText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding HasLoadedHostlist}"
+        AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+        FontFamily="Consolas" FontSize="14" FontWeight="Normal" Padding="0" BorderThickness="0" Background="Transparent"
+        Foreground="{DynamicResource M3.OnSurface}" md:TextFieldAssist.DecorationVisibility="Hidden"
+        AutomationProperties.Name="Содержимое списка доменов"/>
+      </Border>
+     </Grid>
+     <Grid Grid.Row="3" Margin="0,20,0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Grid>
+       <TextBox Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}"
+        AutomationProperties.Name="Добавить домен"/>
+       <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
+        <TextBlock Text="Домен, например example.org" Style="{StaticResource M3.Label}"/>
+       </Border>
+      </Grid>
+      <Button Grid.Column="1" Content="Добавить" Command="{Binding AddDomainCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+     </Grid>
+     <DockPanel Grid.Row="4">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+       <Button Content="Отменить правки" Command="{Binding DiscardChangesCommand}" Style="{StaticResource M3.Button}"/>
+       <Button Content="Сохранить" Command="{Binding SaveHostlistCommand}" Style="{StaticResource M3.FilledButton}" Margin="8,0,0,0"/>
+      </StackPanel>
+      <TextBlock Text="Есть изменения" Style="{StaticResource M3.Label}" VerticalAlignment="Center"
+       Visibility="{Binding IsDirty, Converter={StaticResource BoolVisibility}}"/>
+     </DockPanel>
+    </Grid>
+   </TabItem>
+  </TabControl>
+
+  <StackPanel Grid.Row="2" Margin="0,12,0,0">
+   <Border Background="{DynamicResource M3.ErrorContainer}" CornerRadius="12" Padding="16" Margin="0,0,0,12"
+    Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}">
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <md:PackIcon Kind="AlertCircleOutline" Width="24" Height="24" Foreground="{DynamicResource M3.OnErrorContainer}"/>
+     <ScrollViewer Grid.Column="1" MaxHeight="80" VerticalScrollBarVisibility="Auto">
+      <TextBlock Text="{Binding Error}" Style="{StaticResource M3.Body}" Foreground="{DynamicResource M3.OnErrorContainer}" TextWrapping="Wrap"/>
+     </ScrollViewer>
+    </Grid>
+   </Border>
+   <ProgressBar Height="4" IsIndeterminate="True" Foreground="{DynamicResource M3.Primary}" Background="{DynamicResource M3.SecondaryContainer}"
+    Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"/>
+  </StackPanel>
+  <Grid Grid.Row="3" Margin="0,8,0,0">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <Button Content="Остановить и удалить" Command="{Binding RemoveCommand}" Style="{StaticResource M3.DestructiveButton}"/>
+    <Button Grid.Column="2" Command="{Binding ApplyCommand}" Style="{StaticResource M3.FilledButton}" Padding="16,0,24,0">
+     <StackPanel Orientation="Horizontal">
+      <md:PackIcon Kind="Check" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
+      <TextBlock Text="Применить и запустить" VerticalAlignment="Center"/>
+     </StackPanel>
+    </Button>
+   </Grid>
+   <TextBlock Grid.Row="1" Text="{Binding Root}" Style="{StaticResource M3.Label}" Margin="0,12,0,0"
+    FontWeight="Normal" TextTrimming="CharacterEllipsis" ToolTip="{Binding Root}"/>
+  </Grid>
+  <md:Snackbar Grid.RowSpan="4" MessageQueue="{Binding Notifications}" VerticalAlignment="Bottom"
+   Background="{DynamicResource M3.InverseSurface}" Foreground="{DynamicResource M3.InverseOnSurface}"/>
+ </Grid>
+</Window>
