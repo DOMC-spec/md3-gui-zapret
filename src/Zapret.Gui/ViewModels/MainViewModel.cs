@@ -11,8 +11,15 @@ namespace Zapret.Gui.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
-    private readonly ZapretService service = new(new ProcessRunner());
-    public string Root { get; } = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+    private readonly IFlowsealAdapter adapter;
+    public MainViewModel() : this(new FlowsealAdapter(new ProcessRunner()), AppContext.BaseDirectory) { }
+    public MainViewModel(IFlowsealAdapter adapter, string applicationDirectory)
+    {
+        this.adapter = adapter;
+        root = applicationDirectory;
+    }
+    [ObservableProperty] private string root;
+    [ObservableProperty] private DistributionDescription? distribution;
     public ObservableCollection<Preset> Presets { get; } = [];
     public ObservableCollection<HostlistItem> Hostlists { get; } = [];
     public SnackbarMessageQueue Notifications { get; } = new(TimeSpan.FromSeconds(3));
@@ -32,7 +39,33 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string domain = "";
     [ObservableProperty] private bool isDark;
 
+    public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
+    public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";
+    public string MissingComponentsText => Distribution?.MissingComponents.Count > 0 ? "Отсутствуют: " + string.Join(", ", Distribution.MissingComponents) : "";
+    public string PathLimitations => Distribution?.PathIssue ?? "Пробелы в пути поддерживаются при чтении. Выполнение действий пока недоступно.";
+    public string StrategyReadiness => Distribution?.Strategies.FirstOrDefault(s => s.Preset.FilePath == SelectedPreset?.FilePath)?.Explanation ?? "Выберите стратегию из поставки.";
+    public string CapabilitySummary => Distribution == null ? "" : string.Join("\n\n", Distribution.Capabilities.Select(c => ActionName(c.Action) + ": " + c.Reason));
+    private static string ActionName(FlowsealAction action) => action switch
+    {
+        FlowsealAction.ReadState => "Чтение состояния", FlowsealAction.ManualStart => "Пробный запуск", FlowsealAction.InstallService => "Установка автозапуска",
+        FlowsealAction.StartService => "Запуск службы", FlowsealAction.StopService => "Остановка службы", FlowsealAction.RemoveService => "Удаление автозапуска",
+        FlowsealAction.ChangeGameFilter => "Game Filter", FlowsealAction.EditLists => "Изменение списков", FlowsealAction.Tests => "Тесты Flowseal",
+        FlowsealAction.ChangeIpSet => "IPSet Filter", FlowsealAction.UpdateIpSet => "Обновление IPSet", FlowsealAction.UpdateHosts => "Обновление hosts", FlowsealAction.Diagnostics => "Диагностика",
+        FlowsealAction.CheckUpdates => "Проверка обновлений", FlowsealAction.ChangeUpdateChecks => "Настройка проверки обновлений", _ => "Замена активных fake-файлов"
+    };
+    private bool Allows(FlowsealAction action) => Distribution?.Capabilities.Any(c => c.Action == action && c.Available) == true;
+    private string Unavailable(FlowsealAction action) => Distribution?.Capabilities.FirstOrDefault(c => c.Action == action)?.Reason ?? "Сначала выберите поставку Flowseal.";
+    public bool CanEditLists => !IsBusy && Allows(FlowsealAction.EditLists);
+    private bool CanRemove() => !IsBusy && Allows(FlowsealAction.RemoveService);
     public bool CanInteract => !IsBusy;
+    partial void OnDistributionChanged(DistributionDescription? value)
+    {
+        foreach (var name in new[] { nameof(DistributionVersion), nameof(ReadinessText), nameof(MissingComponentsText), nameof(PathLimitations), nameof(StrategyReadiness), nameof(CapabilitySummary), nameof(CanEditLists) }) OnPropertyChanged(name);
+        ApplyCommand.NotifyCanExecuteChanged();
+        RemoveCommand.NotifyCanExecuteChanged();
+        SaveHostlistCommand.NotifyCanExecuteChanged();
+        AddDomainCommand.NotifyCanExecuteChanged();
+    }
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
     public bool IsDirty => loadedPath != null && HostlistText != originalText;
     public bool HasLoadedHostlist => loadedPath != null;
@@ -42,6 +75,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanInteract));
+        OnPropertyChanged(nameof(CanEditLists));
+        SelectDistributionCommand.NotifyCanExecuteChanged();
         ApplyCommand.NotifyCanExecuteChanged();
         RemoveCommand.NotifyCanExecuteChanged();
         RefreshCommand.NotifyCanExecuteChanged();
@@ -50,7 +85,11 @@ public partial class MainViewModel : ObservableObject
         AddDomainCommand.NotifyCanExecuteChanged();
     }
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
-    partial void OnSelectedPresetChanged(Preset? value) => ApplyCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedPresetChanged(Preset? value)
+    {
+        ApplyCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(StrategyReadiness));
+    }
     partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
     partial void OnIsDarkChanged(bool value) => M3Theme.Apply(value);
 
@@ -68,7 +107,13 @@ public partial class MainViewModel : ObservableObject
 
     private async Task ReadStatusAsync()
     {
-        var snapshot = await service.ReadAsync();
+        ServiceSnapshot snapshot;
+        try { snapshot = await adapter.ReadStateAsync(Root); }
+        catch (Exception ex)
+        {
+            snapshot = new ServiceSnapshot(ServiceState.Unknown, null);
+            Error += (Error.Length == 0 ? "" : "\n") + "Состояние службы прочитать не удалось. " + ex.Message;
+        }
         StatusText = snapshot.State switch
         {
             ServiceState.Missing => "Не установлена", ServiceState.Running => "Работает",
@@ -76,62 +121,61 @@ public partial class MainViewModel : ObservableObject
             ServiceState.Stopping => "Останавливается…", ServiceState.Paused => "Приостановлена", _ => "Неизвестно"
         };
         CurrentState = snapshot.State;
-        ActivePreset = snapshot.Preset ?? (snapshot.State == ServiceState.Missing ? "Пресет ещё не применён" : "Пресет не указан");
+        ActivePreset = snapshot.Preset ?? (snapshot.State == ServiceState.Missing ? "Стратегия ещё не применена" : "Стратегия не указана");
     }
 
     [RelayCommand(CanExecute = nameof(CanInteract))]
-    private async Task RefreshAsync() => await PerformAsync(async () =>
+    private Task RefreshAsync() => PerformAsync(LoadDistributionAsync);
+
+    [RelayCommand(CanExecute = nameof(CanInteract))]
+    private Task SelectDistributionAsync(string path) => PerformAsync(async () =>
+    {
+        if (IsDirty) throw new IOException("Сохраните или отмените изменения списка перед выбором другой поставки.");
+        Distribution = null;
+        Presets.Clear();
+        Hostlists.Clear();
+        Root = path;
+        loadedPath = null;
+        originalText = "";
+        HostlistText = "";
+        SelectedHostlist = null;
+        SelectedPreset = null;
+        Domain = "";
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(HasLoadedHostlist));
+        OnPropertyChanged(nameof(LoadedFileName));
+        await LoadDistributionAsync();
+    });
+
+    private async Task LoadDistributionAsync()
     {
         var name = SelectedPreset?.Name;
-        var presets = await Task.Run(() => PresetParser.Discover(Root));
+        Distribution = await adapter.DescribeAsync(Root);
+        Root = Distribution.Root;
         Presets.Clear();
-        foreach (var preset in presets) Presets.Add(preset);
+        foreach (var strategy in Distribution.Strategies) Presets.Add(strategy.Preset);
         SelectedPreset = Presets.FirstOrDefault(p => p.Name == name) ?? Presets.FirstOrDefault();
         if (!IsDirty)
         {
             var path = SelectedHostlist?.Path;
-            var lists = await Task.Run(Store.Discover);
+            IReadOnlyList<string> lists = [];
+            try { if (Directory.Exists(Root)) lists = await Task.Run(Store.Discover); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { Error = "Списки прочитать не удалось. " + ex.Message; }
             Hostlists.Clear();
             foreach (var file in lists) Hostlists.Add(new HostlistItem(file, System.IO.Path.GetRelativePath(Root, file)));
             SelectedHostlist = Hostlists.FirstOrDefault(p => p.Path == path) ?? Hostlists.FirstOrDefault();
         }
         OnPropertyChanged(nameof(FileSummary));
         await ReadStatusAsync();
-        if (!File.Exists(System.IO.Path.Combine(Root, "bin", "winws.exe")))
-            Error = "Не найден bin\\winws.exe. Поместите EXE в папку распакованного zapret рядом с service.bat.";
-        else if (Presets.Count == 0) Error = "В папке программы не найдены BAT-пресеты с запуском winws.exe.";
-    });
-
-    private bool CanApply() => !IsBusy && SelectedPreset != null;
+    }
+    private bool CanApply() => !IsBusy && SelectedPreset != null && Allows(FlowsealAction.InstallService);
 
     [RelayCommand(CanExecute = nameof(CanApply))]
-    private async Task ApplyAsync()
-    {
-        var success = false;
-        await PerformAsync(async () =>
-        {
-            if (IsDirty) throw new IOException("Сохраните изменения списка перед применением стратегии.");
-            try { await service.ApplyAsync(Root, SelectedPreset!); success = true; }
-            finally { await ReadStatusAsync(); }
-            Notifications.Enqueue("Служба zapret запущена");
-        });
-        if (success && CloseAfterApply)
-        {
-            IsBusy = true;
-            await Task.Delay(1800);
-            IsBusy = false;
-            Application.Current.Shutdown();
-        }
-    }
+    private Task ApplyAsync() => PerformAsync(() => throw new IOException(Unavailable(FlowsealAction.InstallService)));
 
-    [RelayCommand(CanExecute = nameof(CanInteract))]
-    private async Task RemoveAsync() => await PerformAsync(async () =>
-    {
-        try { await service.RemoveAsync(); }
-        finally { await ReadStatusAsync(); }
-        Notifications.Enqueue("Служба удалена, драйвер WinDivert остановлен");
-    });
-
+    [RelayCommand(CanExecute = nameof(CanRemove))]
+    private Task RemoveAsync() => PerformAsync(() => throw new IOException(Unavailable(FlowsealAction.RemoveService)));
     [RelayCommand(CanExecute = nameof(CanInteract))]
     private async Task LoadHostlistAsync() => await PerformAsync(async () =>
     {
@@ -146,9 +190,10 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(LoadedFileName));
     });
 
-    [RelayCommand(CanExecute = nameof(CanInteract))]
+    [RelayCommand(CanExecute = nameof(CanEditLists))]
     private async Task SaveHostlistAsync() => await PerformAsync(async () =>
     {
+        if (!Allows(FlowsealAction.EditLists)) throw new IOException(Unavailable(FlowsealAction.EditLists));
         if (loadedPath == null) throw new IOException("Откройте список для редактирования.");
         await Store.SaveAsync(loadedPath, HostlistText, originalText);
         originalText = HostlistText;
@@ -156,9 +201,10 @@ public partial class MainViewModel : ObservableObject
         Notifications.Enqueue("Список сохранён. Для работающей службы примените стратегию заново.");
     });
 
-    [RelayCommand(CanExecute = nameof(CanInteract))]
+    [RelayCommand(CanExecute = nameof(CanEditLists))]
     private async Task AddDomainAsync() => await PerformAsync(async () =>
     {
+        if (!Allows(FlowsealAction.EditLists)) throw new IOException(Unavailable(FlowsealAction.EditLists));
         if (loadedPath == null) throw new IOException("Откройте список для редактирования.");
         var updated = HostlistStore.AddDomain(HostlistText, Domain);
         await Store.SaveAsync(loadedPath, updated, originalText);

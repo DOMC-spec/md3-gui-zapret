@@ -21,11 +21,17 @@ internal static class Program
             M3Theme.Apply(false);
             var bindingErrors = new BindingErrors();
             PresentationTraceSources.DataBindingSource.Listeners.Add(bindingErrors);
+            CheckDistributionSelection();
+            CheckFolderChangeResetsEditor();
             var window = new MainWindow();
             var viewModel = (MainViewModel)window.DataContext;
+            var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
+                ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
+            viewModel.Distribution = new Zapret.Core.FlowsealDistributionAdapter().Describe(selectedRoot);
+            viewModel.Root = viewModel.Distribution.Root;
             viewModel.StatusText = "Не установлена";
-            viewModel.ActivePreset = "Пресет ещё не применён";
-            viewModel.Presets.Add(new Zapret.Core.Preset("general (ALT)", "general (ALT).bat"));
+            viewModel.ActivePreset = "Стратегия ещё не применена";
+            foreach (var strategy in viewModel.Distribution.Strategies) viewModel.Presets.Add(strategy.Preset);
             viewModel.SelectedPreset = viewModel.Presets[0];
             viewModel.Hostlists.Add(new HostlistItem("lists/list-general.txt", "lists/list-general.txt"));
             viewModel.SelectedHostlist = viewModel.Hostlists[0];
@@ -75,6 +81,83 @@ internal static class Program
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+    }
+
+    private static void Complete(Task task)
+    {
+        var frame = new System.Windows.Threading.DispatcherFrame();
+        _ = task.ContinueWith(_ => Application.Current.Dispatcher.BeginInvoke(() => frame.Continue = false));
+        System.Windows.Threading.Dispatcher.PushFrame(frame);
+        task.GetAwaiter().GetResult();
+    }
+
+    private static FlowsealAdapter ReadOnlyAdapter() => new(new ProcessRunner(),
+        () => Task.FromException<ServiceSnapshot>(new IOException("Нет доступа к диспетчеру служб")));
+
+    private static void CheckDistributionSelection()
+    {
+        var reference = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
+        var model = new MainViewModel(ReadOnlyAdapter(), reference);
+        Complete(model.InitializeAsync());
+        if (model.Root != reference || model.DistributionVersion != "Заявленная версия поставки: 1.10.3" || model.Presets.Count != 22)
+            throw new Exception("Adjacent distribution was not inspected through the real adapter");
+        var missing = Path.Combine(Path.GetTempPath(), "Chosen missing distribution " + Guid.NewGuid());
+        Complete(model.SelectDistributionCommand.ExecuteAsync(missing));
+        if (model.Root != missing || model.Presets.Count != 0 || model.CurrentState != ServiceState.Unknown
+            || !model.ReadinessText.Contains("Папка поставки не найдена") || !model.Error.Contains("Состояние службы")
+            || model.ApplyCommand.CanExecute(null) || model.RemoveCommand.CanExecute(null))
+            throw new Exception("Folder selection must keep distribution readiness visible after service observation fails and block mutations");
+        Complete(model.SelectDistributionCommand.ExecuteAsync(reference));
+        if (model.Presets.Count != 22 || !model.Distribution!.ControlFilesVerified)
+            throw new Exception("Choosing the official fixture must restore source readiness through the real adapter");
+        model.Notifications.Dispose();
+    }
+
+    private static void CopyReference(string destination)
+    {
+        var reference = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
+        foreach (var file in Directory.EnumerateFiles(reference, "*", SearchOption.AllDirectories))
+        {
+            var copy = Path.Combine(destination, Path.GetRelativePath(reference, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy);
+        }
+    }
+    private static void CheckFolderChangeResetsEditor()
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), "Zapret selection " + Guid.NewGuid());
+        try
+        {
+            var first = Path.Combine(temporary, "first distribution");
+            var second = Path.Combine(temporary, "second distribution");
+            CopyReference(first);
+            CopyReference(second);
+            Directory.CreateDirectory(Path.Combine(first, "lists"));
+            Directory.CreateDirectory(Path.Combine(second, "lists"));
+            File.WriteAllText(Path.Combine(first, "lists", "list-general.txt"), "first.example\n");
+            File.WriteAllText(Path.Combine(second, "lists", "list-general.txt"), "second.example\n");
+            var model = new MainViewModel(ReadOnlyAdapter(), first);
+            Complete(model.InitializeAsync());
+            Complete(model.LoadHostlistCommand.ExecuteAsync(null));
+            model.HostlistText = "unsaved.example\n";
+            Complete(model.SelectDistributionCommand.ExecuteAsync(second));
+            if (model.Root != first || !model.IsDirty || !model.Error.Contains("отмените"))
+                throw new Exception("Choosing a folder must preserve unsaved list changes");
+            model.DiscardChangesCommand.Execute(null);
+            Complete(model.SelectDistributionCommand.ExecuteAsync(second));
+            if (model.Root != second || model.HasLoadedHostlist || model.HostlistText != "" || model.Hostlists.Single().Path != Path.Combine(second, "lists", "list-general.txt"))
+                throw new Exception("Choosing a new folder must reset the loaded editor and discover only its lists");
+            Complete(model.LoadHostlistCommand.ExecuteAsync(null));
+            if (model.HostlistText != "second.example\n") throw new Exception("Newly loaded list must come from selected distribution");
+            model.Notifications.Dispose();
+        }
+        finally
+        {
+            var resolved = Path.GetFullPath(temporary);
+            if (!resolved.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
+                || !Path.GetFileName(resolved).StartsWith("Zapret selection ")) throw new IOException("Unexpected test directory");
+            if (Directory.Exists(resolved)) Directory.Delete(resolved, true);
+        }
     }
 
     private static void CheckContrast(Application app, string foreground, string background, double minimum)
