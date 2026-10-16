@@ -4,4 +4,4 @@
   <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
  </PropertyGroup>
  <ItemGroup><ProjectReference Include="../../src/Zapret.Core/Zapret.Core.csproj" /></ItemGroup>
-</Project>
+<ItemGroup><Content Include="../fixtures/flowseal-1.10.3/**/*" Link="fixtures/flowseal-1.10.3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

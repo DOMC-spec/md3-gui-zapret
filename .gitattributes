@@ -1,0 +1,3 @@
+# Exact upstream fixture bytes include CRLF and original whitespace; retain them for SHA-256 verification.
+tests/fixtures/flowseal-1.10.3/** -text -whitespace
+src/Zapret.Core/Compatibility/*.json text eol=lf
