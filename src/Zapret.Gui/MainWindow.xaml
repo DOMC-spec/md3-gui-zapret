@@ -51,6 +51,43 @@
     </TabItem.Header>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
      <StackPanel>
+      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,12">
+       <StackPanel>
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Поставка Flowseal" Style="{StaticResource M3.Title}"/>
+          <TextBlock Text="{Binding DistributionVersion}" Style="{StaticResource M3.Supporting}" Margin="0,4,12,0"/>
+         </StackPanel>
+         <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
+        </Grid>
+        <TextBlock Text="{Binding ReadinessText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+        <Expander Header="Готовность компонентов и действий" Margin="0,8,0,0" Foreground="{DynamicResource M3.OnSurface}" AutomationProperties.Name="Подробности готовности поставки">
+         <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,8,12,0">
+           <TextBlock Text="{Binding MissingComponentsText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+           <TextBlock Text="{Binding PathLimitations}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+           <TextBlock Text="{Binding CapabilitySummary}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+          </StackPanel>
+         </ScrollViewer>
+        </Expander>
+       </StackPanel>
+      </Border>
+      <!-- Outlined card is the less prominent configuration area. -->
+      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
+       BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,8">
+       <StackPanel>
+        <TextBlock Text="Стратегия обхода" Style="{StaticResource M3.Title}"/>
+        <Grid Margin="0,20,0,4">
+         <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name"
+          Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Стратегия обхода"/>
+         <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
+          <TextBlock Text="Стратегия" Style="{StaticResource M3.Label}"/>
+         </Border>
+        </Grid>
+        <TextBlock Text="{Binding StrategyReadiness}" Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
+       </StackPanel>
+      </Border>
       <!-- Filled card: surface-container-highest with on-surface content, no shadow. -->
       <Border Background="{DynamicResource M3.SurfaceContainerHighest}" CornerRadius="12" Padding="16" Margin="0,0,0,8">
        <Grid>
@@ -68,21 +105,6 @@
          <md:PackIcon Kind="Refresh" Width="24" Height="24"/>
         </Button>
        </Grid>
-      </Border>
-      <!-- Outlined card is the less prominent configuration area. -->
-      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
-       BorderThickness="1" CornerRadius="12" Padding="16">
-       <StackPanel>
-        <TextBlock Text="Стратегия обхода" Style="{StaticResource M3.Title}"/>
-        <Grid Margin="0,20,0,4">
-         <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name"
-          Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Стратегия обхода"/>
-         <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
-          <TextBlock Text="Пресет" Style="{StaticResource M3.Label}"/>
-         </Border>
-        </Grid>
-        <TextBlock Text="При применении текущая служба будет заменена." Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
-       </StackPanel>
       </Border>
       <Grid Margin="16,16,12,8">
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
