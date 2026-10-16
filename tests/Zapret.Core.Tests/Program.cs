@@ -8,6 +8,87 @@ Directory.CreateDirectory(Path.Combine(root, "lists"));
 Directory.CreateDirectory(Path.Combine(root, "utils"));
 try
 {
+    Test("Missing distribution explains readiness and leaves inspection available", () =>
+    {
+        var result = new FlowsealDistributionAdapter().Describe(Path.Combine(root, "missing distribution"));
+        Equal("Папка поставки не найдена. Выберите распакованную папку Flowseal.", result.Explanation);
+        Equal("0", result.Strategies.Count.ToString());
+        Equal("True", result.Capabilities.Single(c => c.Action == FlowsealAction.ReadState).Available.ToString());
+        Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.InstallService).Available.ToString());
+    });
+    Test("Pinned Flowseal sources expose all 22 verified strategies without executing BAT", () =>
+    {
+        var result = new FlowsealDistributionAdapter().Describe(Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3"));
+        Equal("1.10.3", result.DeclaredVersion ?? "unknown");
+        Equal("True", result.ControlFilesVerified.ToString());
+        Equal("22", result.Strategies.Count.ToString());
+        Equal("22", result.Strategies.Count(s => s.Verified).ToString());
+        Equal("True", result.MissingComponents.Contains("bin/winws.exe").ToString());
+        Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.InstallService).Available.ToString());
+    });
+    Test("User list and setting changes preserve source verification and safe list editing", () =>
+    {
+        var distribution = CopyReference("user data with spaces");
+        Directory.CreateDirectory(Path.Combine(distribution, "lists"));
+        File.WriteAllText(Path.Combine(distribution, "lists", "list-general.txt"), "user.example\n");
+        File.WriteAllText(Path.Combine(distribution, "utils", "game_filter.enabled"), "mode=udp\ntcp=1234\nudp=5678");
+        Directory.CreateDirectory(Path.Combine(distribution, "bin"));
+        File.WriteAllText(Path.Combine(distribution, "bin", "ACTIVE_GAME_UDP.bin"), "user selected fake");
+        var result = new FlowsealDistributionAdapter().Describe(distribution);
+        Equal("True", result.ControlFilesVerified.ToString());
+        Equal("True", result.Capabilities.Single(c => c.Action == FlowsealAction.EditLists).Available.ToString());
+        Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.ManualStart).Available.ToString());
+    });
+    Test("Changing one strategy does not mislabel the other 21 original strategies", () =>
+    {
+        var distribution = CopyReference("changed strategy");
+        File.AppendAllText(Path.Combine(distribution, "general.bat"), "\r\nrem user change\r\n");
+        var result = new FlowsealDistributionAdapter().Describe(distribution);
+        Equal("21", result.Strategies.Count(s => s.Verified).ToString());
+        Equal("False", result.Strategies.Single(s => s.Preset.Name == "general").Verified.ToString());
+        Equal("False", result.ControlFilesVerified.ToString());
+        Equal("True", result.Capabilities.Single(c => c.Action == FlowsealAction.ReadState).Available.ToString());
+        Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.ManualStart).Available.ToString());
+    });
+    Test("An unknown same-version service is unverified while original strategies remain readable", () =>
+    {
+        var distribution = CopyReference("same version unknown service");
+        File.AppendAllText(Path.Combine(distribution, "service.bat"), "\r\nrem changed control code\r\n");
+        var result = new FlowsealDistributionAdapter().Describe(distribution);
+        Equal("1.10.3", result.DeclaredVersion ?? "unknown");
+        Equal("False", result.ControlFilesVerified.ToString());
+        Equal("22", result.Strategies.Count(s => s.Verified).ToString());
+        Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.InstallService).Available.ToString());
+    });
+    Test("Changing the optional test tool affects its capability reason only", () =>
+    {
+        var distribution = CopyReference("changed tool");
+        File.AppendAllText(Path.Combine(distribution, "utils", "test zapret.ps1"), "\n# changed tool\n");
+        var result = new FlowsealDistributionAdapter().Describe(distribution);
+        Equal("True", result.ControlFilesVerified.ToString());
+        Equal("True", result.Capabilities.Single(c => c.Action == FlowsealAction.Tests).Reason.Contains("отсутствует или изменён").ToString());
+    });
+    Test("Paths with spaces are inspected and unsupported CMD or Cyrillic paths are explained", () =>
+    {
+        foreach (var folder in new[] { "plain distribution with spaces", "unsafe & path", "Поставка" })
+        {
+            var distribution = CopyReference(folder);
+            var result = new FlowsealDistributionAdapter().Describe(distribution);
+            Equal("22", result.Strategies.Count.ToString());
+            Equal("True", result.ControlFilesVerified.ToString());
+            Equal((folder != "plain distribution with spaces").ToString(), (result.PathIssue != null).ToString());
+        }
+    });
+    if (args.Length == 2 && args[0] == "--inspect")
+        Test("Actual complete Flowseal distribution is inspected read-only", () =>
+        {
+            var result = new FlowsealDistributionAdapter().Describe(args[1]);
+            Equal("1.10.3", result.DeclaredVersion ?? "unknown");
+            Equal("True", result.ControlFilesVerified.ToString());
+            Equal("0", result.MissingComponents.Count.ToString());
+            Equal("22", result.Strategies.Count(s => s.Verified).ToString());
+            Equal("False", result.Capabilities.Single(c => c.Action == FlowsealAction.InstallService).Available.ToString());
+        });
     Test("Windows argument quoting round-trips spaces, quotes and trailing backslashes", () =>
     {
         string[] arguments = ["", "abc", @"C:\Program Files\zapret\", "a\"b", @"--hostlist=C:\Мои списки\a.txt", "--new"];
@@ -99,6 +180,19 @@ finally
 }
 Console.WriteLine($"{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;
+
+string CopyReference(string folder)
+{
+    var destination = Path.Combine(root, folder);
+    var reference = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
+    foreach (var file in Directory.EnumerateFiles(reference, "*", SearchOption.AllDirectories))
+    {
+        var copy = Path.Combine(destination, Path.GetRelativePath(reference, file));
+        Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+        File.Copy(file, copy);
+    }
+    return destination;
+}
 
 void Test(string name, Action action)
 {
