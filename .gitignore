@@ -17,6 +17,7 @@
 /.codex/
 /.claude/
 /.scratch/
+/.worktrees/
 /skills-lock.json
 
 # Local environment configuration (keep shareable templates)

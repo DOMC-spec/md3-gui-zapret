@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.CloseRequested += (_, _) => Close();
     }
     private async void OnLoaded(object sender, RoutedEventArgs e) => await viewModel.InitializeAsync();
     private async void OnChooseDistribution(object sender, RoutedEventArgs e)

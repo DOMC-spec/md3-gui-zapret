@@ -12,6 +12,8 @@ namespace Zapret.Gui.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly IFlowsealAdapter adapter;
+    private bool installReady;
+    public event EventHandler? CloseRequested;
     public MainViewModel() : this(new FlowsealAdapter(new ProcessRunner()), AppContext.BaseDirectory) { }
     public MainViewModel(IFlowsealAdapter adapter, string applicationDirectory)
     {
@@ -44,7 +46,7 @@ public partial class MainViewModel : ObservableObject
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
     public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";
     public string MissingComponentsText => Distribution?.MissingComponents.Count > 0 ? "Отсутствуют: " + string.Join(", ", Distribution.MissingComponents) : "";
-    public string PathLimitations => Distribution?.PathIssue ?? "Пробелы в пути поддерживаются при чтении. Выполнение действий пока недоступно.";
+    public string PathLimitations => Distribution?.PathIssue ?? "Автозапуск продолжает работать после закрытия окна. Полное соответствие подготовки Flowseal проверяется на следующем этапе.";
     public string StrategyReadiness => Distribution?.Strategies.FirstOrDefault(s => s.Preset.FilePath == SelectedPreset?.FilePath)?.Explanation ?? "Выберите стратегию из поставки.";
     public string CapabilitySummary => Distribution == null ? "" : string.Join("\n\n", Distribution.Capabilities.Select(c => ActionName(c.Action) + ": " + c.Reason));
     private static string ActionName(FlowsealAction action) => action switch
@@ -62,6 +64,7 @@ public partial class MainViewModel : ObservableObject
     public bool CanInteract => !IsBusy;
     partial void OnDistributionChanged(DistributionDescription? value)
     {
+        installReady = false;
         foreach (var name in new[] { nameof(DistributionVersion), nameof(ReadinessText), nameof(MissingComponentsText), nameof(PathLimitations), nameof(StrategyReadiness), nameof(CapabilitySummary), nameof(CanEditLists) }) OnPropertyChanged(name);
         ApplyCommand.NotifyCanExecuteChanged();
         RemoveCommand.NotifyCanExecuteChanged();
@@ -90,9 +93,10 @@ public partial class MainViewModel : ObservableObject
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnSelectedPresetChanged(Preset? value)
     {
+        installReady = false;
         ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(StrategyReadiness));
-        ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы обновить причину недоступности.";
+        ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы проверить возможность замены автозапуска.";
         CheckActionCommand.NotifyCanExecuteChanged();
     }
     partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
@@ -160,6 +164,7 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadDistributionAsync()
     {
+        installReady = false;
         var name = SelectedPreset?.Name;
         Distribution = await adapter.DescribeAsync(Root);
         Root = Distribution.Root;
@@ -181,10 +186,23 @@ public partial class MainViewModel : ObservableObject
         await ReadStatusAsync();
         await CheckInstallReadinessAsync();
     }
-    private bool CanApply() => !IsBusy && SelectedPreset != null && Allows(FlowsealAction.InstallService);
+    private bool CanApply() => !IsBusy && SelectedPreset != null && installReady;
 
     [RelayCommand(CanExecute = nameof(CanApply))]
-    private Task ApplyAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.InstallService));
+    private async Task ApplyAsync()
+    {
+        var succeeded = false;
+        await PerformAsync(async () =>
+        {
+            installReady = false;
+            ActionReadiness = "Замена автозапуска… При ошибке оболочка попытается вернуть прежнюю службу. Дождитесь результата.";
+            var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+            ShowActionResult(result);
+            succeeded = result.Outcome == FlowsealActionOutcome.Success;
+            if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
+        });
+        if (succeeded && CloseAfterApply && !IsDirty) CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand(CanExecute = nameof(CanRemove))]
     private Task RemoveAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.RemoveService));
@@ -195,8 +213,11 @@ public partial class MainViewModel : ObservableObject
 
     private async Task CheckInstallReadinessAsync()
     {
+        installReady = false;
         if (SelectedPreset == null) { ActionReadiness = "Сначала выберите стратегию из поставки."; return; }
         var result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+        installReady = result.Outcome == FlowsealActionOutcome.Ready;
+        ApplyCommand.NotifyCanExecuteChanged();
         ShowObservedState(result.State);
         ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
     }
@@ -204,9 +225,17 @@ public partial class MainViewModel : ObservableObject
     private async Task DeniedActionAsync(FlowsealAction action)
     {
         var result = await adapter.ExecuteAsync(new(Root, action, SelectedPreset));
+        ShowActionResult(result);
+    }
+
+    private void ShowActionResult(FlowsealActionResult result)
+    {
         ShowObservedState(result.State);
-        ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
-        Error = result.Explanation;
+        ActionReadiness = string.Join("\n\n", new[] { result.Explanation,
+            result.RecoveryExplanation, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)));
+        Error = result.Outcome == FlowsealActionOutcome.Success ? "" : string.Join("\n\n",
+            new[] { result.ApplyError, result.Explanation, result.RecoveryExplanation, result.NextStep }
+                .Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
     }
     [RelayCommand(CanExecute = nameof(CanInteract))]
     private async Task LoadHostlistAsync() => await PerformAsync(async () =>

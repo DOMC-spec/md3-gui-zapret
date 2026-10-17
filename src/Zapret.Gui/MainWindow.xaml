@@ -205,7 +205,7 @@
     <Button Grid.Column="2" Command="{Binding ApplyCommand}" Style="{StaticResource M3.FilledButton}" Padding="16,0,24,0">
      <StackPanel Orientation="Horizontal">
       <md:PackIcon Kind="Check" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
-      <TextBlock Text="Применить и запустить" VerticalAlignment="Center"/>
+       <TextBlock Text="Включить при загрузке Windows" VerticalAlignment="Center"/>
      </StackPanel>
     </Button>
    </Grid>
