@@ -26,6 +26,7 @@ internal static class Program
             CheckFolderChangeResetsEditor();
             CheckServiceSafetyPresentation();
             ServiceRecoveryPresentationChecks.Run(Complete);
+            ServiceControlPresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");

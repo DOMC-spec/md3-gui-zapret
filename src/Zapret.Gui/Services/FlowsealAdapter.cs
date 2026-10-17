@@ -35,6 +35,10 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
             ? capability with { Available = description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
                 && description.MissingComponents.Count == 0 && description.PathIssue == null,
                 Reason = "Подготовка Flowseal 1.10.3 и установка службы с восстановлением; требуется предварительная проверка снимка. Реальная приёмка на отдельной Windows ещё не завершена." }
+            : IsServiceControl(capability.Action) ? capability with {
+                Available = (readServiceState == null || mutationBackend != null)
+                    && ServiceOwnershipCheck.TryProvePath(Path.Combine(description.Root, "bin", "winws.exe"), out _),
+                Reason = "Управление только своей службой через Windows с проверкой результата. Подготовка и переустановка стратегии не выполняются; реальная приёмка на отдельной Windows ещё предстоит." }
             : capability).ToArray() };
     });
     public async Task<ServiceSnapshot> ReadStateAsync(string root) => ServiceOwnershipCheck.Classify(root,
@@ -74,7 +78,7 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                         "Служба, её конфигурация или используемые файлы изменились извне. Действие прекращено; обновите состояние перед повторной попыткой.");
                 var validation = Validate(request, current);
                 if (validation.Outcome != FlowsealActionOutcome.Ready || !execute) return validation;
-                return PrepareAndReplace(request, current);
+                return IsServiceControl(request.Action) ? ControlService(request, current) : PrepareAndReplace(request, current);
             }
             finally { if (acquired) guard.ReleaseMutex(); }
         }
@@ -120,6 +124,13 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
         if (state.Ownership is ServiceOwnership.Foreign or ServiceOwnership.Unknown)
             return new(state.Ownership == ServiceOwnership.Foreign ? FlowsealActionOutcome.ForeignInstallation : FlowsealActionOutcome.UnknownOwnership,
                 state, state.OwnershipReason);
+        if (IsServiceControl(request.Action))
+        {
+            if (readServiceState != null && mutationBackend == null)
+                return new(FlowsealActionOutcome.Unavailable, state, "Граница изменения службы недоступна.");
+            return new(FlowsealActionOutcome.Ready, state,
+                "Принадлежность проверена. Действие ограничено службой zapret выбранной поставки; её состояние будет проверено повторно.");
+        }
         if (request.Action is not (FlowsealAction.InstallService or FlowsealAction.ManualStart))
             return new(FlowsealActionOutcome.Unavailable, state, request.Action == FlowsealAction.ReadState
                 ? "Чтение состояния доступно отдельно; обновите состояние службы."

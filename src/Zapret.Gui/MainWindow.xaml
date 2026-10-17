@@ -85,6 +85,7 @@
           <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
          </StackPanel>
          <TextBlock Text="{Binding ActivePreset}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding AutostartText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="{Binding ServiceOwnershipText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="{Binding ActionReadiness}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
         </StackPanel>
@@ -94,6 +95,11 @@
         </Button>
        </Grid>
       </Border>
+      <WrapPanel Margin="0,4,0,8">
+       <Button Content="Запустить службу" Command="{Binding StartServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
+       <Button Content="Остановить временно" Command="{Binding StopServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"
+        ToolTip="Остановить свою службу, сохранив регистрацию и тип запуска Windows"/>
+      </WrapPanel>
       <!-- Outlined card is the less prominent configuration area. -->
       <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
        BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,8">
@@ -201,7 +207,8 @@
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <Button Content="Остановить и удалить" Command="{Binding RemoveCommand}" Style="{StaticResource M3.DestructiveButton}"/>
+    <Button Content="Удалить автозапуск" Command="{Binding RemoveCommand}" Style="{StaticResource M3.DestructiveButton}"
+     ToolTip="Остановить свою службу, если она работает, и удалить её регистрацию в Windows"/>
     <Button Grid.Column="2" Command="{Binding ApplyCommand}" Style="{StaticResource M3.FilledButton}" Padding="16,0,24,0">
      <StackPanel Orientation="Horizontal">
       <md:PackIcon Kind="Check" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>

@@ -33,6 +33,11 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--controls-only"))
+    {
+        await ServiceControlScenarios.Run(root);
+        return;
+    }
     if (args.Contains("--strategy-parity"))
     {
         await PreparationScenarios.RunStrategies(root);
@@ -50,6 +55,7 @@ try
         return;
     }
     await RecoveryScenarios.Run(root);
+    await ServiceControlScenarios.Run(root);
     var runner = new RejectCommands();
     var installedByBat = new ServiceSnapshot(ServiceState.Stopped, null,
         new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=443"));
@@ -154,7 +160,7 @@ try
         foreach (var file in beforeFiles) File.WriteAllBytes(file.Key, file.Value);
     }
     Console.WriteLine("PASS observed service state, configuration and relevant file changes abort actions");
-    foreach (var action in Enum.GetValues<FlowsealAction>().Where(a => a != FlowsealAction.InstallService))
+    foreach (var action in Enum.GetValues<FlowsealAction>().Where(a => a is not (FlowsealAction.InstallService or FlowsealAction.StartService or FlowsealAction.StopService or FlowsealAction.RemoveService)))
     {
         var refused = await adapter.ExecuteAsync(request with { Action = action });
         if (refused.Outcome != FlowsealActionOutcome.Unavailable || runner.Commands != 0)
