@@ -26,6 +26,7 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    await RecoveryScenarios.Run(root);
     var runner = new RejectCommands();
     var installedByBat = new ServiceSnapshot(ServiceState.Stopped, null,
         new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=443"));

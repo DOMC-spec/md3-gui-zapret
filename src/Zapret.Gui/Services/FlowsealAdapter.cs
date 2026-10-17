@@ -4,8 +4,11 @@ using Zapret.Core;
 namespace Zapret.Gui.Services;
 
 public sealed record FlowsealActionRequest(string Root, FlowsealAction Action, Preset? Strategy = null);
-public enum FlowsealActionOutcome { Unavailable, RecoveryRequired, ForeignInstallation, UnknownOwnership, Conflict, UnsupportedStrategy, MissingFiles, InvalidRequest }
-public sealed record FlowsealActionResult(FlowsealActionOutcome Outcome, ServiceSnapshot State, string Explanation);
+public enum FlowsealActionOutcome { Unavailable, RecoveryRequired, ForeignInstallation, UnknownOwnership, Conflict, UnsupportedStrategy, MissingFiles, InvalidRequest, Ready, Success, ApplyFailed }
+public enum FlowsealRecoveryOutcome { NotNeeded, Restored, Failed, Conflict }
+public sealed record FlowsealActionResult(FlowsealActionOutcome Outcome, ServiceSnapshot State, string Explanation,
+    FlowsealRecoveryOutcome Recovery = FlowsealRecoveryOutcome.NotNeeded, string? ApplyError = null,
+    string? RecoveryExplanation = null, string? NextStep = null);
 
 public interface IFlowsealAdapter
 {
@@ -15,26 +18,36 @@ public interface IFlowsealAdapter
     Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request);
 }
 
-/// <summary>GUI boundary for read-only Flowseal inspection and guarded refusal of unsupported actions.</summary>
-public sealed class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnapshot>>? readServiceState = null) : IFlowsealAdapter
+/// <summary>GUI boundary for Flowseal inspection and guarded transactional service installation.</summary>
+public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnapshot>>? readServiceState = null,
+    IServiceMutationBackend? mutationBackend = null) : IFlowsealAdapter
 {
     // The Windows service is shared by all distributions, sessions and GUI instances.
     private const string GuardName = @"Global\Zapret.Flowseal.ServiceMutation.v1";
     private readonly FlowsealDistributionAdapter distribution = new();
     private readonly ZapretService service = new();
-    public Task<DistributionDescription> DescribeAsync(string root) => Task.Run(() => distribution.Describe(root));
+    public Task<DistributionDescription> DescribeAsync(string root) => Task.Run(() =>
+    {
+        var description = distribution.Describe(root);
+        return description with { Capabilities = description.Capabilities.Select(capability => capability.Action == FlowsealAction.InstallService
+            ? capability with { Available = description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
+                && description.MissingComponents.Count == 0 && description.PathIssue == null,
+                Reason = "Ограниченная установка службы с восстановлением; требуется предварительная проверка снимка. Полная совместимость подготовки Flowseal ожидает задачи 04." }
+            : capability).ToArray() };
+    });
     public async Task<ServiceSnapshot> ReadStateAsync(string root) => ServiceOwnershipCheck.Classify(root,
         await (readServiceState?.Invoke() ?? service.ReadAsync()));
 
     public Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request) => Task.Factory.StartNew(
-        () => GuardedPreflight(request), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        () => GuardedPreflight(request, false), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-    // No cached preflight approval: the public action boundary always re-observes before refusing.
-    public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request) => PreflightAsync(request);
+    // No cached preflight approval: execution repeats observation and all guards.
+    public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request) => Task.Factory.StartNew(
+        () => GuardedPreflight(request, true), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-    private FlowsealActionResult GuardedPreflight(FlowsealActionRequest request)
+    private FlowsealActionResult GuardedPreflight(FlowsealActionRequest request, bool execute)
     {
-        _ = runner; // Retained OS command boundary; this stage has no execution capability.
+        _ = runner; // No BAT/menu execution: service writes use the explicit SCM boundary.
         var state = new ServiceSnapshot(ServiceState.Unknown, null);
         try
         {
@@ -58,12 +71,14 @@ public sealed class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnap
                 if (before.State != current.State || before.Files != current.Files)
                     return new(FlowsealActionOutcome.Conflict, state,
                         "Служба, её конфигурация или используемые файлы изменились извне. Действие прекращено; обновите состояние перед повторной попыткой.");
-                return Validate(request, current);
+                var validation = Validate(request, current);
+                if (validation.Outcome != FlowsealActionOutcome.Ready || !execute) return validation;
+                return Replace(request, current, mutationBackend ?? service);
             }
             finally { if (acquired) guard.ReleaseMutex(); }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException
-            or ArgumentException or NotSupportedException or FormatException or System.ComponentModel.Win32Exception)
+            or ArgumentException or NotSupportedException or FormatException or System.ComponentModel.Win32Exception or TimeoutException or InvalidOperationException)
         {
             return new(FlowsealActionOutcome.InvalidRequest, state,
                 "Предварительная проверка не завершена; действие не начато. Проверьте доступ и исходные файлы: " + ex.Message);
@@ -96,7 +111,7 @@ public sealed class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnap
             + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
     }
 
-    private static FlowsealActionResult Validate(FlowsealActionRequest request, Inputs input)
+    private FlowsealActionResult Validate(FlowsealActionRequest request, Inputs input)
     {
         var state = input.State;
         if (state.Ownership is ServiceOwnership.Foreign or ServiceOwnership.Unknown)
@@ -122,11 +137,14 @@ public sealed class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnap
             .Concat(input.Parsed.ReferencedFiles).Any(p => !ServiceOwnershipCheck.TryProvePath(p, out _)))
             return new(FlowsealActionOutcome.InvalidRequest, state,
                 "Используемые файлы проходят через ссылки или недоступны для проверки. Выберите локальную распакованную поставку; действие не начато.");
-        if (request.Action != FlowsealAction.InstallService || state.Ownership == ServiceOwnership.Missing)
+        if (request.Action != FlowsealAction.InstallService || (readServiceState != null && mutationBackend == null && state.Ownership == ServiceOwnership.Missing))
             return new(FlowsealActionOutcome.Unavailable, state,
                 "Запуск и установка через оболочку пока недоступны: подготовка и соответствие выполнения Flowseal ещё не проверены. Используйте исходную поставку.");
-        return new(FlowsealActionOutcome.RecoveryRequired, state,
-            "Замена автозапуска недоступна в этой версии: восстановление прежней службы при ошибке ещё не поддерживается.");
+        if ((readServiceState != null && mutationBackend == null) || !SupportsRecovery(state))
+            return new(FlowsealActionOutcome.RecoveryRequired, state,
+                "Полный поддерживаемый снимок службы получить нельзя. Изменения не начаты: " + (state.ObservationError ?? "параметры восстановления не подтверждены."));
+        return new(FlowsealActionOutcome.Ready, state,
+            "Снимок и стратегия проверены. Доступна ограниченная установка с восстановлением. Полная совместимость подготовки Flowseal ожидает задачи 04.");
     }
 
     private sealed record Inputs(ServiceSnapshot State, DistributionDescription Description, string? Selected,
