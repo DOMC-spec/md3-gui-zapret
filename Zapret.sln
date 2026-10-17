@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -12,6 +12,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zapret.Core.Tests", "tests\Zapret.Core.Tests\Zapret.Core.Tests.csproj", "{018CA7CC-A102-4D33-9B77-6EBB1F1E541C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zapret.Gui.Smoke", "tests\Zapret.Gui.Smoke\Zapret.Gui.Smoke.csproj", "{289F100A-B918-4E50-BBE3-34B512C21C63}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zapret.Guard.Tests", "tests\Zapret.Guard.Tests\Zapret.Guard.Tests.csproj", "{5924BF2C-D9EE-4A34-B05D-DE865497F534}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -71,6 +75,18 @@ Global
 		{289F100A-B918-4E50-BBE3-34B512C21C63}.Release|x64.Build.0 = Release|Any CPU
 		{289F100A-B918-4E50-BBE3-34B512C21C63}.Release|x86.ActiveCfg = Release|Any CPU
 		{289F100A-B918-4E50-BBE3-34B512C21C63}.Release|x86.Build.0 = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|x64.Build.0 = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Debug|x86.Build.0 = Debug|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|x64.ActiveCfg = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|x64.Build.0 = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|x86.ActiveCfg = Release|Any CPU
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +96,6 @@ Global
 		{6E86097F-6CDF-4C69-B997-99CD797E5B06} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{018CA7CC-A102-4D33-9B77-6EBB1F1E541C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{289F100A-B918-4E50-BBE3-34B512C21C63} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{5924BF2C-D9EE-4A34-B05D-DE865497F534} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup>
+  <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+  <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+  <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
+ </PropertyGroup>
+ <ItemGroup><ProjectReference Include="../../src/Zapret.Gui/Zapret.Gui.csproj" /></ItemGroup>
+ <ItemGroup><Content Include="../fixtures/flowseal-1.10.3/**/*" Link="fixtures/flowseal-1.10.3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>

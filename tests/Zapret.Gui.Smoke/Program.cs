@@ -18,29 +18,28 @@ internal static class Program
         {
             var app = new App();
             app.InitializeComponent();
+            SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
             var bindingErrors = new BindingErrors();
             PresentationTraceSources.DataBindingSource.Listeners.Add(bindingErrors);
             CheckDistributionSelection();
             CheckFolderChangeResetsEditor();
+            CheckServiceSafetyPresentation();
             var window = new MainWindow();
-            var viewModel = (MainViewModel)window.DataContext;
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
-            viewModel.Distribution = new Zapret.Core.FlowsealDistributionAdapter().Describe(selectedRoot);
-            viewModel.Root = viewModel.Distribution.Root;
-            viewModel.StatusText = "Не установлена";
-            viewModel.ActivePreset = "Стратегия ещё не применена";
-            foreach (var strategy in viewModel.Distribution.Strategies) viewModel.Presets.Add(strategy.Preset);
-            viewModel.SelectedPreset = viewModel.Presets[0];
-            viewModel.Hostlists.Add(new HostlistItem("lists/list-general.txt", "lists/list-general.txt"));
-            viewModel.SelectedHostlist = viewModel.Hostlists[0];
-            if (args.Contains("--running"))
-            {
-                viewModel.CurrentState = ServiceState.Running;
-                viewModel.StatusText = "Работает";
-                viewModel.ActivePreset = "general (ALT)";
-            }
+            var snapshot = args.Contains("--owned")
+                ? new ServiceSnapshot(ServiceState.Stopped, null, new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(selectedRoot, "bin", "winws.exe"))))
+                : args.Contains("--foreign")
+                ? new ServiceSnapshot(ServiceState.Stopped, "external BAT", new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Environment.ProcessPath!)))
+                : args.Contains("--unknown") ? new ServiceSnapshot(ServiceState.Unknown, null)
+                : new ServiceSnapshot(ServiceState.Missing, null);
+            if (args.Contains("--running")) snapshot = new(ServiceState.Running, "general (ALT)",
+                new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(selectedRoot, "bin", "winws.exe"))),
+                new ServiceProcess(19, Path.Combine(selectedRoot, "bin", "winws.exe"), 100));
+            var viewModel = new MainViewModel(new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot)), selectedRoot);
+            window.DataContext = viewModel;
+            Complete(viewModel.InitializeAsync());
             if (args.Contains("--error")) viewModel.Error = "Не найден bin\\winws.exe. Поместите конфигуратор в корневую папку zapret.";
             if (args.Contains("--dark")) viewModel.IsDark = true;
             CheckContrast(app, "OnSurface", "Surface", 4.5);
@@ -160,6 +159,38 @@ internal static class Program
         }
     }
 
+    private static void CheckServiceSafetyPresentation()
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), "Zapret selection " + Guid.NewGuid());
+        try
+        {
+            CopyReference(temporary);
+            var description = new Zapret.Core.FlowsealDistributionAdapter().Describe(temporary);
+            foreach (var relative in description.RequiredComponents!)
+            {
+                var file = Path.Combine(temporary, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.WriteAllText(file, "inert fixture");
+            }
+            foreach (var list in new[] { "list-general-user.txt", "list-exclude-user.txt", "ipset-exclude-user.txt" })
+                File.WriteAllText(Path.Combine(temporary, "lists", list), "fixture.example\n");
+            var snapshot = new ServiceSnapshot(ServiceState.Stopped, null,
+                new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(temporary, "bin", "winws.exe"))));
+            var model = new MainViewModel(new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot)), temporary);
+            Complete(model.InitializeAsync());
+            Complete(model.CheckActionCommand.ExecuteAsync(null));
+            if (!model.ServiceOwnershipText.Contains("Своя служба") || !model.ActionReadiness.Contains("восстановление прежней службы")
+                || model.ApplyCommand.CanExecute(null) || model.RemoveCommand.CanExecute(null))
+                throw new Exception("GUI must show verified ownership and the recovery-required refusal through the real adapter");
+            model.Notifications.Dispose();
+        }
+        finally
+        {
+            if (!Path.GetFileName(temporary).StartsWith("Zapret selection ")
+                || !Path.GetFullPath(temporary).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)) throw new IOException("Unexpected test folder");
+            if (Directory.Exists(temporary)) Directory.Delete(temporary, true);
+        }
+    }
     private static void CheckContrast(Application app, string foreground, string background, double minimum)
     {
         static double Luminance(Color color)
@@ -193,4 +224,10 @@ internal sealed class BindingErrors : TraceListener
     {
         if (message != null) Errors.Add(message);
     }
+}
+
+
+internal sealed class NoCommands : ICommandRunner
+{
+    public Task<CommandResult> RunAsync(string executable, params string[] arguments) => throw new Exception("WPF smoke must not execute OS commands");
 }

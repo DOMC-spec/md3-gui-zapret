@@ -61,10 +61,11 @@
          </StackPanel>
          <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
         </Grid>
-        <TextBlock Text="{Binding ReadinessText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+
         <Expander Header="Готовность компонентов и действий" Margin="0,8,0,0" Foreground="{DynamicResource M3.OnSurface}" AutomationProperties.Name="Подробности готовности поставки">
          <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,8,12,0">
+           <TextBlock Text="{Binding ReadinessText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,0,0,12"/>
            <TextBlock Text="{Binding MissingComponentsText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,8"/>
            <TextBlock Text="{Binding PathLimitations}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,12"/>
            <TextBlock Text="{Binding CapabilitySummary}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
@@ -72,6 +73,26 @@
          </ScrollViewer>
         </Expander>
        </StackPanel>
+      </Border>
+      <!-- Filled card: surface-container-highest with on-surface content, no shadow. -->
+      <Border Background="{DynamicResource M3.SurfaceContainerHighest}" CornerRadius="12" Padding="16" Margin="0,0,0,8">
+       <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+        <StackPanel>
+         <TextBlock Text="Служба zapret" Style="{StaticResource M3.Label}"/>
+         <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
+          <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+          <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
+         </StackPanel>
+         <TextBlock Text="{Binding ActivePreset}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding ServiceOwnershipText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+         <TextBlock Text="{Binding ActionReadiness}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+        </StackPanel>
+        <Button Grid.Column="1" Style="{StaticResource M3.IconButton}" VerticalAlignment="Top"
+         Command="{Binding RefreshCommand}" ToolTip="Обновить статус, стратегии и списки" AutomationProperties.Name="Обновить статус и список стратегий">
+         <md:PackIcon Kind="Refresh" Width="24" Height="24"/>
+        </Button>
+       </Grid>
       </Border>
       <!-- Outlined card is the less prominent configuration area. -->
       <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
@@ -86,25 +107,9 @@
          </Border>
         </Grid>
         <TextBlock Text="{Binding StrategyReadiness}" Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
+        <Button Content="Проверить действие" Command="{Binding CheckActionCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left" Margin="0,12,0,8" AutomationProperties.Name="Проверить стратегию и принадлежность службы без изменений"/>
+
        </StackPanel>
-      </Border>
-      <!-- Filled card: surface-container-highest with on-surface content, no shadow. -->
-      <Border Background="{DynamicResource M3.SurfaceContainerHighest}" CornerRadius="12" Padding="16" Margin="0,0,0,8">
-       <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
-        <StackPanel>
-         <TextBlock Text="Служба zapret" Style="{StaticResource M3.Label}"/>
-         <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
-          <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-          <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
-         </StackPanel>
-         <TextBlock Text="{Binding ActivePreset}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
-        </StackPanel>
-        <Button Grid.Column="1" Style="{StaticResource M3.IconButton}" VerticalAlignment="Top"
-         Command="{Binding RefreshCommand}" ToolTip="Обновить статус, стратегии и списки" AutomationProperties.Name="Обновить статус и список стратегий">
-         <md:PackIcon Kind="Refresh" Width="24" Height="24"/>
-        </Button>
-       </Grid>
       </Border>
       <Grid Margin="16,16,12,8">
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
