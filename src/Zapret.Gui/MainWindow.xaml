@@ -51,6 +51,17 @@
     </TabItem.Header>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
      <StackPanel>
+      <Border Background="{DynamicResource M3.ErrorContainer}" CornerRadius="12" Padding="16" Margin="0,0,0,12"
+       Visibility="{Binding HasInterruptedOperation, Converter={StaticResource BoolVisibility}}">
+       <StackPanel>
+        <TextBlock Text="Незавершённая операция" Style="{StaticResource M3.Title}" Foreground="{DynamicResource M3.OnErrorContainer}"/>
+        <TextBlock Text="{Binding InterruptedOperationText}" Style="{StaticResource M3.Body}" Foreground="{DynamicResource M3.OnErrorContainer}" TextWrapping="Wrap" Margin="0,8,0,12"/>
+        <WrapPanel>
+         <Button Content="Выбрать сохранённую поставку" Command="{Binding OpenRecoveryDistributionCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
+         <Button Content="Восстановить прежнее состояние" Command="{Binding RecoverInterruptedCommand}" Style="{StaticResource M3.FilledButton}" Margin="0,0,0,8"/>
+        </WrapPanel>
+       </StackPanel>
+      </Border>
       <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,12">
        <StackPanel>
         <Grid>

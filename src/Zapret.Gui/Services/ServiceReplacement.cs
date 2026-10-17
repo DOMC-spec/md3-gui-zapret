@@ -26,7 +26,8 @@ public sealed partial class FlowsealAdapter
         var original = input.State;
         var desired = new ServiceSnapshot(ServiceState.Stopped, Path.GetFileNameWithoutExtension(input.Selected!),
             new ServiceConfiguration(input.Parsed!.ServiceCommand(Path.Combine(input.Description.Root, "bin", "winws.exe"))),
-            RecoveryData: new("Zapret DPI bypass software", original.RecoveryData?.SecurityDescriptor ?? "", Guid.NewGuid().ToString("N")));
+            RecoveryData: new("Zapret DPI bypass software", original.RecoveryData?.SecurityDescriptor ?? "", activeRecord!.Id));
+        RecordPrepared(input, desired);
         var expected = original;
         ServiceSnapshot? deleting = null;
         var changed = false;
@@ -83,7 +84,7 @@ public sealed partial class FlowsealAdapter
             {
                 var current = ReadStateAsync(request.Root).GetAwaiter().GetResult();
                 if (!SameEntry(current, entry)) throw new ServiceConflictException("Конфигурация службы изменилась во время ожидания.");
-                if (current.State == state) return current;
+                if (current.State == state) { RecordObserved(current); return current; }
                 if (current.State is not (ServiceState.Starting or ServiceState.Stopping))
                     throw new IOException("Служба не достигла ожидаемого состояния " + state + ": " + current.State);
                 if (Environment.TickCount64 >= deadline) throw new TimeoutException("Истекло время ожидания службы: " + state);
@@ -102,7 +103,7 @@ public sealed partial class FlowsealAdapter
                     if (Environment.TickCount64 >= deadline) throw new TimeoutException("Windows ещё удерживает удаляемую запись службы.");
                     Thread.Sleep(100); continue;
                 }
-                if (current.State == ServiceState.Missing) return current;
+                if (current.State == ServiceState.Missing) { RecordObserved(current); return current; }
                 if (!SameEntry(current, entry)) throw new ServiceConflictException("После удаления обнаружена другая запись службы.");
                 if (Environment.TickCount64 >= deadline) throw new TimeoutException("Удаление службы не завершилось.");
                 Thread.Sleep(100);

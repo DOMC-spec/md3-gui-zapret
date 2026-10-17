@@ -20,19 +20,19 @@ public sealed partial class FlowsealAdapter
     private FlowsealActionResult PrepareAndReplace(FlowsealActionRequest request, Inputs input)
     {
         Inputs prepared;
-        try { prepared = Prepare(request, input); }
+        try { BeginRecordedOperation(request, input); prepared = Prepare(request, input); RecordPrepared(prepared); }
         catch (Exception error) when (Recoverable(error))
         {
             ServiceSnapshot observed;
             try { observed = ReadStateAsync(request.Root).GetAwaiter().GetResult(); }
             catch (Exception observationError) when (Recoverable(observationError))
             { observed = new(ServiceState.Unknown, null, ObservationError: observationError.Message); }
-            return new(FlowsealActionOutcome.ApplyFailed, observed, "Подготовка запуска не завершена. Оболочка не изменяла службу.",
+            return FinishRecordedOperation(new(FlowsealActionOutcome.ApplyFailed, observed, "Подготовка запуска не завершена. Оболочка не изменяла службу.",
                 error is ServiceConflictException ? FlowsealRecoveryOutcome.Conflict : FlowsealRecoveryOutcome.NotNeeded,
                 error.Message, "Восстановление службы не требовалось: остановка и замена ещё не начинались.",
-                "Проверьте причину и обновите состояние. Созданные пользовательские списки сохранены; TCP timestamps могли быть включены.");
+                "Проверьте причину и обновите состояние. Созданные пользовательские списки сохранены; TCP timestamps могли быть включены."));
         }
-        return Replace(request, prepared, mutationBackend ?? service);
+        return FinishRecordedOperation(Replace(request, prepared, RecordingBackend(mutationBackend ?? service, request.Root)));
     }
 
     private Inputs Prepare(FlowsealActionRequest request, Inputs input)

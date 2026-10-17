@@ -17,11 +17,13 @@ public interface IFlowsealAdapter
     Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request);
     Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request);
     Task<ManualSessionSnapshot> ReadManualSessionAsync() => Task.FromResult(new ManualSessionSnapshot());
+    Task<InterruptedOperationSnapshot> ReadInterruptedOperationAsync(string root) => Task.FromResult(new InterruptedOperationSnapshot());
 }
 
 /// <summary>GUI boundary for Flowseal inspection and guarded transactional service installation.</summary>
 public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnapshot>>? readServiceState = null,
-    IServiceMutationBackend? mutationBackend = null, IManualProcessBackend? manualBackend = null) : IFlowsealAdapter
+    IServiceMutationBackend? mutationBackend = null, IManualProcessBackend? manualBackend = null,
+    IOperationJournal? operationJournal = null) : IFlowsealAdapter
 {
     // The Windows service is shared by all distributions, sessions and GUI instances.
     private const string GuardName = @"Global\Zapret.Flowseal.ServiceMutation.v1";
@@ -60,6 +62,8 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
     {
         FlowsealAction.ManualStart => BeginManualAsync(request),
         FlowsealAction.ManualStop => StopManualAsync(request.Root),
+        FlowsealAction.RecoverInterrupted => Task.Factory.StartNew(() => InspectInterrupted(request.Root, true).Result,
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default),
         _ => Task.Factory.StartNew(() => GuardedPreflight(request, true), CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default)
     };
@@ -84,6 +88,14 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                 }
                 if (!acquired) return new(FlowsealActionOutcome.Conflict, state,
                     "Другая оболочка проверяет или изменяет общую службу zapret. Дождитесь завершения и обновите состояние.");
+                try
+                {
+                    if (journal.Read() is { Phase: not OperationPhase.Completed })
+                        return new(FlowsealActionOutcome.RecoveryRequired, state,
+                            "Обнаружена незавершённая операция. Сначала проверьте и восстановите прежнее состояние; новые изменения службы заблокированы.");
+                }
+                catch (Exception error) when (Recoverable(error))
+                { return new(FlowsealActionOutcome.RecoveryRequired, state, "Журнал восстановления недоступен. Изменения запрещены: " + error.Message); }
                 var current = Observe(request);
                 state = current.State;
                 if (before.State != current.State || before.Files != current.Files)
@@ -99,6 +111,10 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException
             or ArgumentException or NotSupportedException or FormatException or System.ComponentModel.Win32Exception or TimeoutException or InvalidOperationException)
         {
+            if (activeRecord is { Phase: not OperationPhase.Completed })
+                return new(FlowsealActionOutcome.RecoveryRequired, SafeRecoveryRead(request.Root),
+                    "Операция или её журнал не завершены. Обновите состояние и выполните восстановление: " + ex.Message,
+                    FlowsealRecoveryOutcome.Failed, ApplyError: ex.Message);
             return new(FlowsealActionOutcome.InvalidRequest, state,
                 "Предварительная проверка не завершена; действие не начато. Проверьте доступ и исходные файлы: " + ex.Message);
         }

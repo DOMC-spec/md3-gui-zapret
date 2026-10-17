@@ -48,6 +48,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string manualStatusText = "Пробный сеанс не запущен.";
     [ObservableProperty] private string manualProcessText = "";
     private ManualSessionSnapshot? lastManualSnapshot;
+    [ObservableProperty] private bool hasInterruptedOperation;
+    [ObservableProperty] private string interruptedOperationText = "Незавершённых операций нет.";
+    private InterruptedOperationSnapshot interruptedOperation = new();
     public string ManualConsequences => "Пробный запуск не устанавливает автозапуск. Своя работающая служба временно остановится и вернётся после завершения сеанса или закрытия окна. Обновления не проверяются. TCP timestamps и созданные списки сохранятся. Отсутствующие настройки Game Filter сохраняются как отключённый режим.";
 
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
@@ -60,6 +63,7 @@ public partial class MainViewModel : ObservableObject
     {
         FlowsealAction.ReadState => "Чтение состояния", FlowsealAction.ManualStart => "Пробный запуск", FlowsealAction.InstallService => "Установка автозапуска",
         FlowsealAction.ManualStop => "Завершение пробного сеанса",
+        FlowsealAction.RecoverInterrupted => "Восстановление после сбоя",
         FlowsealAction.StartService => "Запуск службы", FlowsealAction.StopService => "Остановка службы", FlowsealAction.RemoveService => "Удаление автозапуска",
         FlowsealAction.ChangeGameFilter => "Game Filter", FlowsealAction.EditLists => "Изменение списков", FlowsealAction.Tests => "Тесты Flowseal",
         FlowsealAction.ChangeIpSet => "IPSet Filter", FlowsealAction.UpdateIpSet => "Обновление IPSet", FlowsealAction.UpdateHosts => "Обновление hosts", FlowsealAction.Diagnostics => "Диагностика",
@@ -67,8 +71,8 @@ public partial class MainViewModel : ObservableObject
     };
     private bool Allows(FlowsealAction action) => Distribution?.Capabilities.Any(c => c.Action == action && c.Available) == true;
     private string Unavailable(FlowsealAction action) => Distribution?.Capabilities.FirstOrDefault(c => c.Action == action)?.Reason ?? "Сначала выберите поставку Flowseal.";
-    public bool CanEditLists => !IsBusy && !HasManualSession && Allows(FlowsealAction.EditLists);
-    private bool CanControlService(FlowsealAction action) => !IsBusy && !HasManualSession && Allows(action)
+    public bool CanEditLists => !IsBusy && !HasManualSession && !HasInterruptedOperation && Allows(FlowsealAction.EditLists);
+    private bool CanControlService(FlowsealAction action) => !IsBusy && !HasManualSession && !HasInterruptedOperation && Allows(action)
         && serviceOwnership == ServiceOwnership.Owned && CurrentState is ServiceState.Running or ServiceState.Stopped;
     private bool CanRemove() => CanControlService(FlowsealAction.RemoveService);
     private bool CanStartService() => CanControlService(FlowsealAction.StartService) && CurrentState == ServiceState.Stopped;
@@ -81,7 +85,7 @@ public partial class MainViewModel : ObservableObject
     }
     public bool CanInteract => !IsBusy;
     public bool CanChooseDistribution => !IsBusy && !HasManualSession;
-    private bool CanStartManual() => !IsBusy && !HasManualSession && SelectedPreset != null && Allows(FlowsealAction.ManualStart);
+    private bool CanStartManual() => !IsBusy && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && Allows(FlowsealAction.ManualStart);
     private bool CanStopManual() => !IsBusy && HasManualSession;
     private void NotifyManualControls()
     {
@@ -95,8 +99,11 @@ public partial class MainViewModel : ObservableObject
         SaveHostlistCommand.NotifyCanExecuteChanged();
         AddDomainCommand.NotifyCanExecuteChanged();
         NotifyServiceControls();
+        RecoverInterruptedCommand.NotifyCanExecuteChanged();
+        OpenRecoveryDistributionCommand.NotifyCanExecuteChanged();
     }
     partial void OnHasManualSessionChanged(bool value) => NotifyManualControls();
+    partial void OnHasInterruptedOperationChanged(bool value) => NotifyManualControls();
     partial void OnDistributionChanged(DistributionDescription? value)
     {
         installReady = false;
@@ -233,9 +240,10 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(FileSummary));
         await ReadStatusAsync();
         await PollManualSessionAsync();
-        if (!HasManualSession) await CheckInstallReadinessAsync();
+        await ReadInterruptedOperationAsync();
+        if (!HasManualSession && !HasInterruptedOperation) await CheckInstallReadinessAsync();
     }
-    private bool CanApply() => !IsBusy && !HasManualSession && SelectedPreset != null && installReady;
+    private bool CanApply() => !IsBusy && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && installReady;
 
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
@@ -247,6 +255,7 @@ public partial class MainViewModel : ObservableObject
             ActionReadiness = "Замена автозапуска… При ошибке оболочка попытается вернуть прежнюю службу. Дождитесь результата.";
             var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
             ShowActionResult(result);
+            await ReadInterruptedOperationAsync();
             succeeded = result.Outcome == FlowsealActionOutcome.Success;
             if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
         });
@@ -262,7 +271,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanStopService))]
     private Task StopServiceAsync() => PerformAsync(() => ExecuteServiceControlAsync(FlowsealAction.StopService));
 
-    private bool CanCheckAction() => !IsBusy && !HasManualSession && SelectedPreset != null;
+    private bool CanCheckAction() => !IsBusy && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null;
     [RelayCommand(CanExecute = nameof(CanCheckAction))]
     private Task CheckActionAsync() => PerformAsync(CheckInstallReadinessAsync);
 
@@ -284,7 +293,37 @@ public partial class MainViewModel : ObservableObject
         ActionReadiness = ActionName(action) + "… Дождитесь подтверждения состояния Windows.";
         var result = await adapter.ExecuteAsync(new(Root, action));
         ShowActionResult(result);
+        await ReadInterruptedOperationAsync();
     }
+
+    private bool CanRecoverInterrupted() => !IsBusy && !HasManualSession && HasInterruptedOperation && interruptedOperation.CanRecover;
+    private bool CanOpenRecoveryDistribution() => !IsBusy && !HasManualSession && HasInterruptedOperation
+        && interruptedOperation.Root != null && !Path.GetFullPath(Root).TrimEnd(Path.DirectorySeparatorChar)
+            .Equals(Path.GetFullPath(interruptedOperation.Root).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+
+    private async Task ReadInterruptedOperationAsync()
+    {
+        try { interruptedOperation = await adapter.ReadInterruptedOperationAsync(Root); }
+        catch (Exception error)
+        { interruptedOperation = new(true, false, Explanation: "Журнал восстановления прочитать не удалось. Изменения заблокированы: " + error.Message); }
+        HasInterruptedOperation = interruptedOperation.Pending;
+        InterruptedOperationText = interruptedOperation.Explanation;
+        if (HasInterruptedOperation) installReady = false;
+        NotifyManualControls();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRecoverInterrupted))]
+    private Task RecoverInterruptedAsync() => PerformAsync(async () =>
+    {
+        installReady = false;
+        ActionReadiness = "Проверка сохранённой операции и возврат прежнего состояния…";
+        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.RecoverInterrupted));
+        ShowActionResult(result);
+        await ReadInterruptedOperationAsync();
+    });
+
+    [RelayCommand(CanExecute = nameof(CanOpenRecoveryDistribution))]
+    private Task OpenRecoveryDistributionAsync() => SelectDistributionAsync(interruptedOperation.Root!);
 
     [RelayCommand(CanExecute = nameof(CanStartManual))]
     private Task StartManualAsync() => PerformAsync(async () =>
@@ -313,7 +352,11 @@ public partial class MainViewModel : ObservableObject
         ManualStatusText = snapshot.Explanation;
         ManualProcessText = snapshot.Process is { } process
             ? $"{snapshot.Strategy} · PID {process.Id} · создан {new DateTime(process.StartedAtUtcTicks!.Value, DateTimeKind.Utc).ToLocalTime():G}\n{process.Executable}" : "";
-        if (snapshot.Result != null) ShowActionResult(snapshot.Result);
+        if (snapshot.Result != null)
+        {
+            ShowActionResult(snapshot.Result);
+            await ReadInterruptedOperationAsync();
+        }
     }
 
     public async Task<bool> PrepareToCloseAsync()

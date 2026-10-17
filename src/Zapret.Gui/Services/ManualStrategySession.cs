@@ -61,7 +61,7 @@ public sealed partial class FlowsealAdapter
     // This worker owns the global service mutex for the whole session, including restoration.
     private FlowsealActionResult RunManual(FlowsealActionRequest request, Inputs input, ManualRun run)
     {
-        var backend = mutationBackend ?? service;
+        var backend = RecordingBackend(mutationBackend ?? service, request.Root);
         var processes = manualBackend ?? new WindowsManualProcessBackend();
         var expected = input.State;
         var prepared = input;
@@ -74,12 +74,14 @@ public sealed partial class FlowsealAdapter
         var processStopped = true;
         try
         {
+            BeginRecordedOperation(request, input);
             strategyLock = File.Open(input.Selected!, FileMode.Open, FileAccess.Read, FileShare.Read);
             serviceLock = File.Open(Path.Combine(input.Description.Root, "service.bat"), FileMode.Open, FileAccess.Read, FileShare.Read);
             settingsLock = LockManualSettings(ref input);
             prepared = input;
             CheckUnchanged();
             prepared = Prepare(request, input);
+            RecordPrepared(prepared);
             CheckUnchanged();
             processes.EnsureNoOtherWinws(expected.Process);
             if (expected.State == ServiceState.Running)
@@ -90,6 +92,7 @@ public sealed partial class FlowsealAdapter
             }
             CheckUnchanged();
             processes.EnsureNoOtherWinws(null);
+            RecordObserved(expected, OperationPhase.ManualLaunch);
             process = processes.Launch(input.Description.Root, input.Selected!);
             processStopped = false;
             ServiceProcess? identity = null;
@@ -110,6 +113,7 @@ public sealed partial class FlowsealAdapter
                     identity = found;
                     if (++stable == 4)
                     {
+                        RecordObserved(expected, OperationPhase.ManualActive, identity);
                         Volatile.Write(ref manualState, new(ManualSessionState.Running, request.Root, request.Strategy?.Name,
                             identity, "Пробный winws работает. Автозапуск не изменён; обновления не проверялись. Работа процесса не подтверждает доступность видео или голоса."));
                         run.Started.TrySetResult(new(FlowsealActionOutcome.Success, expected, manualState.Explanation));
@@ -177,13 +181,13 @@ public sealed partial class FlowsealAdapter
             failure ??= error;
         }
         var finalState = SafeRead();
-        return new(failure == null ? FlowsealActionOutcome.Success
+        return FinishRecordedOperation(new(failure == null ? FlowsealActionOutcome.Success
             : recovery == FlowsealRecoveryOutcome.Conflict ? FlowsealActionOutcome.Conflict : FlowsealActionOutcome.ApplyFailed,
             finalState, failure == null ? "Пробный сеанс завершён. Обновления не проверялись." : "Пробный сеанс завершён с ошибкой: " + failure.Message,
             recovery, failure?.Message, recoveryText,
             recovery is FlowsealRecoveryOutcome.Failed or FlowsealRecoveryOutcome.Conflict
                 ? "Обновите состояние и проверьте службу вручную. Сторонние изменения не перезаписываются."
-                : "TCP timestamps и созданные пользовательские списки сохраняются. Автозапуск не изменён.");
+                : "TCP timestamps и созданные пользовательские списки сохраняются. Автозапуск не изменён."));
 
         ServiceSnapshot SafeRead()
         {
@@ -204,7 +208,8 @@ public sealed partial class FlowsealAdapter
                 var current = Observe(request);
                 if (current.Files != prepared.Files || !SameEntry(current.State, entry))
                     throw new ServiceConflictException("Служба или файлы изменились во время перехода.");
-                if (current.State.State == target && current.State.Ownership == ServiceOwnership.Owned) return current.State;
+                if (current.State.State == target && current.State.Ownership == ServiceOwnership.Owned)
+                { RecordObserved(current.State); return current.State; }
                 if (current.State.State != (target == ServiceState.Running ? ServiceState.Starting : ServiceState.Stopping))
                     throw new IOException("Служба не достигла состояния " + target);
                 if (Environment.TickCount64 >= deadline) throw new TimeoutException("Истекло время ожидания службы: " + target);

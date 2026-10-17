@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Zapret.Core;
 
-public enum FlowsealAction { ReadState, ManualStart, InstallService, StartService, StopService, RemoveService, ChangeGameFilter, EditLists, Tests, ChangeIpSet, UpdateIpSet, UpdateHosts, Diagnostics, CheckUpdates, ChangeUpdateChecks, ReplaceActiveFakes, ManualStop }
+public enum FlowsealAction { ReadState, ManualStart, InstallService, StartService, StopService, RemoveService, ChangeGameFilter, EditLists, Tests, ChangeIpSet, UpdateIpSet, UpdateHosts, Diagnostics, CheckUpdates, ChangeUpdateChecks, ReplaceActiveFakes, ManualStop, RecoverInterrupted }
 public sealed record FlowsealCapability(FlowsealAction Action, bool Available, string Reason);
 public sealed record DistributionStrategy(Preset Preset, bool Verified, string Explanation);
 public sealed record DistributionDescription(string Root, string? DeclaredVersion, bool ControlFilesVerified,

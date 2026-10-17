@@ -30,6 +30,12 @@ if (args.FirstOrDefault() == "--capture-bin")
     return;
 }
 
+if (args.Length == 3 && args[0] == "--interrupted-child")
+{
+    await InterruptedOperationScenarios.Child(args[1], args[2]);
+    return;
+}
+
 if (args.Length == 4 && args[0] == "--hold-guard")
 {
     using var ready = EventWaitHandle.OpenExisting(args[2]);
@@ -54,6 +60,11 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--interrupted-only"))
+    {
+        await InterruptedOperationScenarios.Run(root);
+        return;
+    }
     if (args.Contains("--manual-only"))
     {
         await ManualSessionScenarios.Run(root);
@@ -83,6 +94,7 @@ try
     await RecoveryScenarios.Run(root);
     await ServiceControlScenarios.Run(root);
     await ManualSessionScenarios.Run(root);
+    await InterruptedOperationScenarios.Run(root);
     var runner = new RejectCommands();
     var installedByBat = new ServiceSnapshot(ServiceState.Stopped, null,
         new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=443"));
@@ -187,7 +199,7 @@ try
         foreach (var file in beforeFiles) File.WriteAllBytes(file.Key, file.Value);
     }
     Console.WriteLine("PASS observed service state, configuration and relevant file changes abort actions");
-    foreach (var action in Enum.GetValues<FlowsealAction>().Where(a => a is not (FlowsealAction.InstallService or FlowsealAction.StartService or FlowsealAction.StopService or FlowsealAction.RemoveService or FlowsealAction.ManualStop)))
+    foreach (var action in Enum.GetValues<FlowsealAction>().Where(a => a is not (FlowsealAction.InstallService or FlowsealAction.StartService or FlowsealAction.StopService or FlowsealAction.RemoveService or FlowsealAction.ManualStop or FlowsealAction.RecoverInterrupted)))
     {
         var refused = await adapter.ExecuteAsync(request with { Action = action });
         if (refused.Outcome != FlowsealActionOutcome.Unavailable || runner.Commands != 0)

@@ -34,6 +34,7 @@ internal static class Program
             ServiceRecoveryPresentationChecks.Run(Complete);
             ServiceControlPresentationChecks.Run(Complete);
             ManualPresentationChecks.Run(Complete);
+            InterruptedPresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");

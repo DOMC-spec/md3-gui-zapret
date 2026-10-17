@@ -176,6 +176,7 @@ static class ManualSessionScenarios
                 }
             }
             if (Environment.GetEnvironmentVariable("NO_UPDATE_CHECK") != inherited) throw new Exception("Update flag leaked to GUI environment");
+            await InterruptedOperationScenarios.RunNativeCrash(root);
             Console.WriteLine("PASS original BAT + native detached Windows job with inert sc/netsh/winws: spaces, parentheses, escaping, child environment and cleanup");
         }
         finally
