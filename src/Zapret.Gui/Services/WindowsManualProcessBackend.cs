@@ -109,6 +109,9 @@ public sealed class WindowsManualProcessBackend : IManualProcessBackend
         public void Stop()
         {
             if (!TerminateJobObject(job, 0)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            // An empty job PID list alone can precede completion of process teardown.
+            if ((engine != null && WaitForSingleObject(engine, 10000) != 0) || WaitForSingleObject(launcher, 10000) != 0)
+                throw new TimeoutException("Завершение собственного winws/cmd не подтверждено по дескриптору процесса.");
             var deadline = Environment.TickCount64 + 10000;
             while (ProcessIds(job).Length != 0)
             {

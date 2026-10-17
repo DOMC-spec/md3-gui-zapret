@@ -67,12 +67,17 @@ public sealed partial class FlowsealAdapter
         var prepared = input;
         var serviceStopAttempted = false;
         IManualProcessSession? process = null;
+        FileStream? strategyLock = null;
+        FileStream? serviceLock = null;
+        FileStream? settingsLock = null;
         Exception? failure = null;
         var processStopped = true;
         try
         {
-            using var strategyLock = File.Open(input.Selected!, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var serviceLock = File.Open(Path.Combine(input.Description.Root, "service.bat"), FileMode.Open, FileAccess.Read, FileShare.Read);
+            strategyLock = File.Open(input.Selected!, FileMode.Open, FileAccess.Read, FileShare.Read);
+            serviceLock = File.Open(Path.Combine(input.Description.Root, "service.bat"), FileMode.Open, FileAccess.Read, FileShare.Read);
+            settingsLock = LockManualSettings(ref input);
+            prepared = input;
             CheckUnchanged();
             prepared = Prepare(request, input);
             CheckUnchanged();
@@ -130,6 +135,10 @@ public sealed partial class FlowsealAdapter
                     catch (Exception error) when (Recoverable(error)) { failure = error; processStopped = false; }
                 }
             }
+            // Keep CMD inputs frozen until even a launcher stopped during startup is no longer executing.
+            settingsLock?.Dispose();
+            serviceLock?.Dispose();
+            strategyLock?.Dispose();
         }
         var recovery = FlowsealRecoveryOutcome.NotNeeded;
         string recoveryText;
@@ -202,5 +211,30 @@ public sealed partial class FlowsealAdapter
                 Thread.Sleep(100);
             }
         }
+    }
+
+    // Upstream interpolates this data into CALL. Keep validated bytes immutable through its entire execution.
+    private static FileStream LockManualSettings(ref Inputs input)
+    {
+        var path = Path.Combine(input.Description.Root, "utils", "game_filter.enabled");
+        var wasMissing = input.Files.Split('\n').Contains(path + ":missing");
+        if (wasMissing)
+        {
+            if (!ServiceOwnershipCheck.TryProvePath(Path.GetDirectoryName(path)!, out _))
+                throw new IOException("Папка настроек Game Filter недоступна или проходит через ссылку.");
+            // Empty and absent both mean disabled in pinned 1.10.3. Reserve the absent name without overwriting a raced creation.
+            using (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) { }
+        }
+        var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            if (!ServiceOwnershipCheck.TryProvePath(path, out _) || (wasMissing && stream.Length != 0))
+                throw new ServiceConflictException("Настройки Game Filter изменились до блокировки чтения.");
+            if (wasMissing)
+                input = input with { Files = string.Join('\n', input.Files.Split('\n').Select(stamp =>
+                    stamp == path + ":missing" ? FileStamp(path) : stamp)) };
+            return stream;
+        }
+        catch { stream.Dispose(); throw; }
     }
 }

@@ -48,7 +48,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string manualStatusText = "Пробный сеанс не запущен.";
     [ObservableProperty] private string manualProcessText = "";
     private ManualSessionSnapshot? lastManualSnapshot;
-    public string ManualConsequences => "Пробный запуск не устанавливает автозапуск. Своя работающая служба временно остановится и вернётся после завершения сеанса или закрытия окна. Обновления не проверяются. TCP timestamps и созданные списки сохранятся.";
+    public string ManualConsequences => "Пробный запуск не устанавливает автозапуск. Своя работающая служба временно остановится и вернётся после завершения сеанса или закрытия окна. Обновления не проверяются. TCP timestamps и созданные списки сохранятся. Отсутствующие настройки Game Filter сохраняются как отключённый режим.";
 
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
     public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";

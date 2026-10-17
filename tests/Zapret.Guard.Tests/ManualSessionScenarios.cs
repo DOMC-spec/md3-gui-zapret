@@ -87,6 +87,42 @@ static class ManualSessionScenarios
             }
         }
         Console.WriteLine("PASS partial stop, launch refusal, early exit, identity changes, external edits and cleanup failure preserve safety");
+        var flag = Path.Combine(root, "utils", "game_filter.enabled");
+        var savedFlag = File.Exists(flag) ? File.ReadAllBytes(flag) : null;
+        try
+        {
+            foreach (var missingFlag in new[] { false, true })
+            {
+                if (missingFlag) File.Delete(flag); else File.WriteAllText(flag, "mode=disabled\r\n");
+                var blocked = false;
+                var blockedDuringStop = false;
+                var state = new MemoryService(original);
+                var engine = new MemoryManualProcesses(root)
+                {
+                    OnLaunch = () =>
+                    {
+                        try { File.WriteAllText(flag, "mode=\" & echo unsafe & rem \""); }
+                        catch (IOException) { blocked = true; }
+                    },
+                    OnStop = () =>
+                    {
+                        try { File.WriteAllText(flag, "mode=\" & echo unsafe & rem \""); }
+                        catch (IOException) { blockedDuringStop = true; }
+                    }
+                };
+                var adapterWithLock = new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(state.State), state, engine);
+                var started = await adapterWithLock.ExecuteAsync(request);
+                try
+                {
+                    if (!blocked || started.Outcome != FlowsealActionOutcome.Success)
+                        throw new Exception("Existing or initially missing Game Filter must be locked against CMD-input replacement before launch");
+                }
+                finally { await adapterWithLock.ExecuteAsync(new(root, FlowsealAction.ManualStop)); }
+                if (!blockedDuringStop) throw new Exception("Game Filter must remain locked until the original CMD/job has terminated");
+            }
+        }
+        finally { if (savedFlag == null) File.Delete(flag); else File.WriteAllBytes(flag, savedFlag); }
+        Console.WriteLine("PASS existing/absent Game Filter cannot become substituted CMD input between preparation and BAT launch");
         await RunNative(root);
     }
 
@@ -146,7 +182,14 @@ static class ManualSessionScenarios
         {
             if (!Path.GetFullPath(root).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
                 || !Path.GetFileName(root).StartsWith("Zapret manual ")) throw new IOException("Unexpected native fixture root");
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            // Windows/antivirus can briefly retain a mapped runtime DLL after process teardown.
+            var deadline = Environment.TickCount64 + 10000;
+            while (Directory.Exists(root))
+            {
+                try { Directory.Delete(root, true); }
+                catch (Exception error) when ((error is IOException or UnauthorizedAccessException) && Environment.TickCount64 < deadline)
+                { await Task.Delay(200); }
+            }
         }
     }
 
@@ -163,16 +206,19 @@ sealed class MemoryManualProcesses(string root) : IManualProcessBackend, IManual
     public bool LaunchFailure { get; init; }
     public bool StopFailure { get; init; }
     public Func<ManualProcessObservation>? Observation { get; set; }
+    public Action? OnLaunch { get; init; }
+    public Action? OnStop { get; init; }
     public void EnsureNoOtherWinws(ServiceProcess? serviceProcess) { }
     public IManualProcessSession Launch(string selectedRoot, string strategyPath)
     {
         if (selectedRoot != root || strategyPath != Path.Combine(root, "general.bat"))
             throw new Exception("Only selected original BAT may be launched in its distribution directory");
         if (LaunchFailure) throw new IOException("Injected launch refusal");
+        OnLaunch?.Invoke();
         Running = true;
         return this;
     }
     public ManualProcessObservation Observe() => Observation?.Invoke() ?? new(Running ? new(77, Path.Combine(root, "bin", "winws.exe"), 456) : null, true, !Running);
-    public void Stop() { if (StopFailure) throw new IOException("Injected cleanup failure"); Running = false; }
+    public void Stop() { OnStop?.Invoke(); if (StopFailure) throw new IOException("Injected cleanup failure"); Running = false; }
     public void Dispose() => Running = false;
 }
