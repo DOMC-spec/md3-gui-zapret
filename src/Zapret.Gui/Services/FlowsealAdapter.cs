@@ -16,11 +16,12 @@ public interface IFlowsealAdapter
     Task<ServiceSnapshot> ReadStateAsync(string root);
     Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request);
     Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request);
+    Task<ManualSessionSnapshot> ReadManualSessionAsync() => Task.FromResult(new ManualSessionSnapshot());
 }
 
 /// <summary>GUI boundary for Flowseal inspection and guarded transactional service installation.</summary>
 public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<ServiceSnapshot>>? readServiceState = null,
-    IServiceMutationBackend? mutationBackend = null) : IFlowsealAdapter
+    IServiceMutationBackend? mutationBackend = null, IManualProcessBackend? manualBackend = null) : IFlowsealAdapter
 {
     // The Windows service is shared by all distributions, sessions and GUI instances.
     private const string GuardName = @"Global\Zapret.Flowseal.ServiceMutation.v1";
@@ -35,6 +36,13 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
             ? capability with { Available = description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
                 && description.MissingComponents.Count == 0 && description.PathIssue == null,
                 Reason = "Подготовка Flowseal 1.10.3 и установка службы с восстановлением; требуется предварительная проверка снимка. Реальная приёмка на отдельной Windows ещё не завершена." }
+            : capability.Action == FlowsealAction.ManualStart ? capability with {
+                Available = (readServiceState == null || (mutationBackend != null && manualBackend != null))
+                    && description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
+                    && description.MissingComponents.Count == 0 && description.PathIssue == null,
+                Reason = "Исходный BAT запускается в пробном сеансе. Своя служба временно останавливается и возвращается после сеанса; обновления не проверяются. Реальная приёмка Windows ещё предстоит." }
+            : capability.Action == FlowsealAction.ManualStop ? capability with { Available = true,
+                Reason = "Завершение только своего пробного сеанса и возврат прежнего состояния службы." }
             : IsServiceControl(capability.Action) ? capability with {
                 Available = (readServiceState == null || mutationBackend != null)
                     && ServiceOwnershipCheck.TryProvePath(Path.Combine(description.Root, "bin", "winws.exe"), out _),
@@ -48,10 +56,15 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
         () => GuardedPreflight(request, false), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     // No cached preflight approval: execution repeats observation and all guards.
-    public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request) => Task.Factory.StartNew(
-        () => GuardedPreflight(request, true), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request) => request.Action switch
+    {
+        FlowsealAction.ManualStart => BeginManualAsync(request),
+        FlowsealAction.ManualStop => StopManualAsync(request.Root),
+        _ => Task.Factory.StartNew(() => GuardedPreflight(request, true), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default)
+    };
 
-    private FlowsealActionResult GuardedPreflight(FlowsealActionRequest request, bool execute)
+    private FlowsealActionResult GuardedPreflight(FlowsealActionRequest request, bool execute, ManualRun? manual = null)
     {
         var state = new ServiceSnapshot(ServiceState.Unknown, null);
         try
@@ -78,7 +91,8 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                         "Служба, её конфигурация или используемые файлы изменились извне. Действие прекращено; обновите состояние перед повторной попыткой.");
                 var validation = Validate(request, current);
                 if (validation.Outcome != FlowsealActionOutcome.Ready || !execute) return validation;
-                return IsServiceControl(request.Action) ? ControlService(request, current) : PrepareAndReplace(request, current);
+                return manual != null ? RunManual(request, current, manual)
+                    : IsServiceControl(request.Action) ? ControlService(request, current) : PrepareAndReplace(request, current);
             }
             finally { if (acquired) guard.ReleaseMutex(); }
         }
@@ -158,12 +172,19 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
             .Concat(input.Parsed.ReferencedFiles).Any(p => !ServiceOwnershipCheck.TryProvePath(p, out _) && !CanInitializeUserList(input.Description.Root, p)))
             return new(FlowsealActionOutcome.InvalidRequest, state,
                 "Используемые файлы проходят через ссылки или недоступны для проверки. Выберите локальную распакованную поставку; действие не начато.");
-        if (request.Action != FlowsealAction.InstallService || (readServiceState != null && mutationBackend == null && state.Ownership == ServiceOwnership.Missing))
+        if ((request.Action == FlowsealAction.ManualStart && readServiceState != null && (manualBackend == null || mutationBackend == null))
+            || (request.Action == FlowsealAction.InstallService && readServiceState != null && mutationBackend == null && state.Ownership == ServiceOwnership.Missing))
             return new(FlowsealActionOutcome.Unavailable, state,
                 "Запуск и установка через оболочку пока недоступны: подготовка и соответствие выполнения Flowseal ещё не проверены. Используйте исходную поставку.");
         if ((readServiceState != null && mutationBackend == null) || !SupportsRecovery(state))
             return new(FlowsealActionOutcome.RecoveryRequired, state,
                 "Полный поддерживаемый снимок службы получить нельзя. Изменения не начаты: " + (state.ObservationError ?? "параметры восстановления не подтверждены."));
+        if (request.Action == FlowsealAction.ManualStart)
+        {
+            (manualBackend ?? new WindowsManualProcessBackend()).EnsureNoOtherWinws(state.Process);
+            return new(FlowsealActionOutcome.Ready, state,
+                "Будет выполнен исходный BAT. Своя работающая служба временно остановится и вернётся после завершения сеанса или закрытия окна. Автозапуск не меняется. Обновления не проверяются; TCP timestamps и созданные списки сохранятся.");
+        }
         return new(FlowsealActionOutcome.Ready, state,
             "Снимок и стратегия проверены. При установке будут подготовлены пользовательские списки, TCP timestamps и Game Filter из Flowseal 1.10.3.");
     }

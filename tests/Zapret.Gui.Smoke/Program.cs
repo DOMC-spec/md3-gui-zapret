@@ -20,6 +20,12 @@ internal static class Program
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
+            if (args.Contains("--manual-presentation-only"))
+            {
+                ManualPresentationChecks.Run(Complete);
+                app.Dispatcher.InvokeShutdown();
+                return 0;
+            }
             var bindingErrors = new BindingErrors();
             PresentationTraceSources.DataBindingSource.Listeners.Add(bindingErrors);
             CheckDistributionSelection();
@@ -27,6 +33,7 @@ internal static class Program
             CheckServiceSafetyPresentation();
             ServiceRecoveryPresentationChecks.Run(Complete);
             ServiceControlPresentationChecks.Run(Complete);
+            ManualPresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");

@@ -44,6 +44,11 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string hostlistText = "";
     [ObservableProperty] private string domain = "";
     [ObservableProperty] private bool isDark;
+    [ObservableProperty] private bool hasManualSession;
+    [ObservableProperty] private string manualStatusText = "Пробный сеанс не запущен.";
+    [ObservableProperty] private string manualProcessText = "";
+    private ManualSessionSnapshot? lastManualSnapshot;
+    public string ManualConsequences => "Пробный запуск не устанавливает автозапуск. Своя работающая служба временно остановится и вернётся после завершения сеанса или закрытия окна. Обновления не проверяются. TCP timestamps и созданные списки сохранятся.";
 
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
     public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";
@@ -54,6 +59,7 @@ public partial class MainViewModel : ObservableObject
     private static string ActionName(FlowsealAction action) => action switch
     {
         FlowsealAction.ReadState => "Чтение состояния", FlowsealAction.ManualStart => "Пробный запуск", FlowsealAction.InstallService => "Установка автозапуска",
+        FlowsealAction.ManualStop => "Завершение пробного сеанса",
         FlowsealAction.StartService => "Запуск службы", FlowsealAction.StopService => "Остановка службы", FlowsealAction.RemoveService => "Удаление автозапуска",
         FlowsealAction.ChangeGameFilter => "Game Filter", FlowsealAction.EditLists => "Изменение списков", FlowsealAction.Tests => "Тесты Flowseal",
         FlowsealAction.ChangeIpSet => "IPSet Filter", FlowsealAction.UpdateIpSet => "Обновление IPSet", FlowsealAction.UpdateHosts => "Обновление hosts", FlowsealAction.Diagnostics => "Диагностика",
@@ -61,8 +67,8 @@ public partial class MainViewModel : ObservableObject
     };
     private bool Allows(FlowsealAction action) => Distribution?.Capabilities.Any(c => c.Action == action && c.Available) == true;
     private string Unavailable(FlowsealAction action) => Distribution?.Capabilities.FirstOrDefault(c => c.Action == action)?.Reason ?? "Сначала выберите поставку Flowseal.";
-    public bool CanEditLists => !IsBusy && Allows(FlowsealAction.EditLists);
-    private bool CanControlService(FlowsealAction action) => !IsBusy && Allows(action)
+    public bool CanEditLists => !IsBusy && !HasManualSession && Allows(FlowsealAction.EditLists);
+    private bool CanControlService(FlowsealAction action) => !IsBusy && !HasManualSession && Allows(action)
         && serviceOwnership == ServiceOwnership.Owned && CurrentState is ServiceState.Running or ServiceState.Stopped;
     private bool CanRemove() => CanControlService(FlowsealAction.RemoveService);
     private bool CanStartService() => CanControlService(FlowsealAction.StartService) && CurrentState == ServiceState.Stopped;
@@ -74,6 +80,23 @@ public partial class MainViewModel : ObservableObject
         StopServiceCommand.NotifyCanExecuteChanged();
     }
     public bool CanInteract => !IsBusy;
+    public bool CanChooseDistribution => !IsBusy && !HasManualSession;
+    private bool CanStartManual() => !IsBusy && !HasManualSession && SelectedPreset != null && Allows(FlowsealAction.ManualStart);
+    private bool CanStopManual() => !IsBusy && HasManualSession;
+    private void NotifyManualControls()
+    {
+        OnPropertyChanged(nameof(CanChooseDistribution));
+        OnPropertyChanged(nameof(CanEditLists));
+        StartManualCommand.NotifyCanExecuteChanged();
+        StopManualCommand.NotifyCanExecuteChanged();
+        SelectDistributionCommand.NotifyCanExecuteChanged();
+        ApplyCommand.NotifyCanExecuteChanged();
+        CheckActionCommand.NotifyCanExecuteChanged();
+        SaveHostlistCommand.NotifyCanExecuteChanged();
+        AddDomainCommand.NotifyCanExecuteChanged();
+        NotifyServiceControls();
+    }
+    partial void OnHasManualSessionChanged(bool value) => NotifyManualControls();
     partial void OnDistributionChanged(DistributionDescription? value)
     {
         installReady = false;
@@ -82,6 +105,7 @@ public partial class MainViewModel : ObservableObject
         NotifyServiceControls();
         SaveHostlistCommand.NotifyCanExecuteChanged();
         AddDomainCommand.NotifyCanExecuteChanged();
+        NotifyManualControls();
     }
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
     public bool IsDirty => loadedPath != null && HostlistText != originalText;
@@ -101,6 +125,7 @@ public partial class MainViewModel : ObservableObject
         LoadHostlistCommand.NotifyCanExecuteChanged();
         SaveHostlistCommand.NotifyCanExecuteChanged();
         AddDomainCommand.NotifyCanExecuteChanged();
+        NotifyManualControls();
     }
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnSelectedPresetChanged(Preset? value)
@@ -110,6 +135,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(StrategyReadiness));
         ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы проверить возможность замены автозапуска.";
         CheckActionCommand.NotifyCanExecuteChanged();
+        StartManualCommand.NotifyCanExecuteChanged();
     }
     partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
     partial void OnIsDarkChanged(bool value) => M3Theme.Apply(value);
@@ -163,9 +189,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanInteract))]
     private Task RefreshAsync() => PerformAsync(LoadDistributionAsync);
 
-    [RelayCommand(CanExecute = nameof(CanInteract))]
+    [RelayCommand(CanExecute = nameof(CanChooseDistribution))]
     private Task SelectDistributionAsync(string path) => PerformAsync(async () =>
     {
+        if (HasManualSession) throw new IOException("Сначала завершите свой пробный сеанс перед сменой поставки.");
         if (IsDirty) throw new IOException("Сохраните или отмените изменения списка перед выбором другой поставки.");
         Distribution = null;
         Presets.Clear();
@@ -205,9 +232,10 @@ public partial class MainViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(FileSummary));
         await ReadStatusAsync();
-        await CheckInstallReadinessAsync();
+        await PollManualSessionAsync();
+        if (!HasManualSession) await CheckInstallReadinessAsync();
     }
-    private bool CanApply() => !IsBusy && SelectedPreset != null && installReady;
+    private bool CanApply() => !IsBusy && !HasManualSession && SelectedPreset != null && installReady;
 
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
@@ -234,7 +262,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanStopService))]
     private Task StopServiceAsync() => PerformAsync(() => ExecuteServiceControlAsync(FlowsealAction.StopService));
 
-    private bool CanCheckAction() => !IsBusy && SelectedPreset != null;
+    private bool CanCheckAction() => !IsBusy && !HasManualSession && SelectedPreset != null;
     [RelayCommand(CanExecute = nameof(CanCheckAction))]
     private Task CheckActionAsync() => PerformAsync(CheckInstallReadinessAsync);
 
@@ -256,6 +284,52 @@ public partial class MainViewModel : ObservableObject
         ActionReadiness = ActionName(action) + "… Дождитесь подтверждения состояния Windows.";
         var result = await adapter.ExecuteAsync(new(Root, action));
         ShowActionResult(result);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartManual))]
+    private Task StartManualAsync() => PerformAsync(async () =>
+    {
+        installReady = false;
+        ActionReadiness = "Подготовка пробного сеанса… Дождитесь наблюдения собственного winws.";
+        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStart, SelectedPreset));
+        ShowActionResult(result);
+        await PollManualSessionAsync();
+    });
+
+    [RelayCommand(CanExecute = nameof(CanStopManual))]
+    private Task StopManualAsync() => PerformAsync(async () =>
+    {
+        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStop));
+        ShowActionResult(result);
+        await PollManualSessionAsync();
+    });
+
+    public async Task PollManualSessionAsync()
+    {
+        var snapshot = await adapter.ReadManualSessionAsync();
+        if (ReferenceEquals(snapshot, lastManualSnapshot)) return;
+        lastManualSnapshot = snapshot;
+        HasManualSession = snapshot.IsActive;
+        ManualStatusText = snapshot.Explanation;
+        ManualProcessText = snapshot.Process is { } process
+            ? $"{snapshot.Strategy} · PID {process.Id} · создан {new DateTime(process.StartedAtUtcTicks!.Value, DateTimeKind.Utc).ToLocalTime():G}\n{process.Executable}" : "";
+        if (snapshot.Result != null) ShowActionResult(snapshot.Result);
+    }
+
+    public async Task<bool> PrepareToCloseAsync()
+    {
+        if (IsBusy) return false;
+        await PollManualSessionAsync();
+        if (!HasManualSession) return true;
+        var canClose = false;
+        await PerformAsync(async () =>
+        {
+            var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStop));
+            ShowActionResult(result);
+            await PollManualSessionAsync();
+            canClose = result.Outcome == FlowsealActionOutcome.Success;
+        });
+        return canClose;
     }
 
     private void ShowActionResult(FlowsealActionResult result)

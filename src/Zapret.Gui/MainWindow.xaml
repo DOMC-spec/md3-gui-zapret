@@ -59,7 +59,7 @@
           <TextBlock Text="Поставка Flowseal" Style="{StaticResource M3.Title}"/>
           <TextBlock Text="{Binding DistributionVersion}" Style="{StaticResource M3.Supporting}" Margin="0,4,12,0"/>
          </StackPanel>
-         <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
+         <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" IsEnabled="{Binding CanChooseDistribution}" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
         </Grid>
 
         <Expander Header="Готовность компонентов и действий" Margin="0,8,0,0" Foreground="{DynamicResource M3.OnSurface}" AutomationProperties.Name="Подробности готовности поставки">
@@ -114,6 +114,15 @@
         </Grid>
         <TextBlock Text="{Binding StrategyReadiness}" Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
         <Button Content="Проверить действие" Command="{Binding CheckActionCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left" Margin="0,12,0,8" AutomationProperties.Name="Проверить стратегию и принадлежность службы без изменений"/>
+
+        <TextBlock Text="Пробный сеанс" Style="{StaticResource M3.Title}" Margin="0,12,0,8"/>
+        <TextBlock Text="{Binding ManualConsequences}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+        <WrapPanel Margin="0,12,0,0">
+         <Button Content="Попробовать стратегию" Command="{Binding StartManualCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
+         <Button Content="Завершить пробный сеанс" Command="{Binding StopManualCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"/>
+        </WrapPanel>
+        <TextBlock Text="{Binding ManualStatusText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding ManualProcessText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,4,0,0"/>
 
        </StackPanel>
       </Border>

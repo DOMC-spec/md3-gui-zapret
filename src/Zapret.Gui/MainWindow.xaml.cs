@@ -7,29 +7,56 @@ namespace Zapret.Gui;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new();
+    private MainViewModel Model => (MainViewModel)DataContext;
+    private readonly System.Windows.Threading.DispatcherTimer manualTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private bool pollingManual;
     public MainWindow()
     {
         InitializeComponent();
         DataContext = viewModel;
         viewModel.CloseRequested += (_, _) => Close();
+        manualTimer.Tick += async (_, _) =>
+        {
+            if (pollingManual || Model.IsBusy) return;
+            pollingManual = true;
+            try { await Model.PollManualSessionAsync(); }
+            catch (Exception error) { Model.Error = "Не удалось обновить пробный сеанс: " + error.Message; }
+            finally { pollingManual = false; }
+        };
+        Closed += (_, _) => manualTimer.Stop();
     }
-    private async void OnLoaded(object sender, RoutedEventArgs e) => await viewModel.InitializeAsync();
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        await Model.InitializeAsync();
+        manualTimer.Start();
+    }
     private async void OnChooseDistribution(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
             Title = "Выберите распакованную папку Flowseal с service.bat",
-            InitialDirectory = Directory.Exists(viewModel.Root) ? viewModel.Root : AppContext.BaseDirectory,
+            InitialDirectory = Directory.Exists(Model.Root) ? Model.Root : AppContext.BaseDirectory,
             Multiselect = false
         };
-        if (dialog.ShowDialog(this) == true) await viewModel.SelectDistributionCommand.ExecuteAsync(dialog.FolderName);
+        if (dialog.ShowDialog(this) == true) await Model.SelectDistributionCommand.ExecuteAsync(dialog.FolderName);
     }
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private async void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (viewModel.IsBusy) { e.Cancel = true; return; }
-        if (viewModel.IsDirty && MessageBox.Show(this, "Закрыть окно без сохранения изменений списка?", "Несохранённые изменения",
+        if (Model.IsBusy) { e.Cancel = true; return; }
+        if (Model.IsDirty && MessageBox.Show(this, "Закрыть окно без сохранения изменений списка?", "Несохранённые изменения",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             e.Cancel = true;
-        if (!e.Cancel) viewModel.Notifications.Dispose();
+        if (e.Cancel) return;
+        if (Model.HasManualSession)
+        {
+            e.Cancel = true;
+            try
+            {
+                if (await Model.PrepareToCloseAsync()) _ = Dispatcher.BeginInvoke(new Action(Close));
+            }
+            catch (Exception error) { Model.Error = "Пробный сеанс не удалось завершить: " + error.Message; }
+            return;
+        }
+        Model.Notifications.Dispose();
     }
 }
