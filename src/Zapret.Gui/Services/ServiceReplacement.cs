@@ -24,7 +24,7 @@ public sealed partial class FlowsealAdapter
     private FlowsealActionResult Replace(FlowsealActionRequest request, Inputs input, IServiceMutationBackend backend)
     {
         var original = input.State;
-        var desired = new ServiceSnapshot(ServiceState.Stopped, Path.GetFileName(input.Selected!),
+        var desired = new ServiceSnapshot(ServiceState.Stopped, Path.GetFileNameWithoutExtension(input.Selected!),
             new ServiceConfiguration(input.Parsed!.ServiceCommand(Path.Combine(input.Description.Root, "bin", "winws.exe"))),
             RecoveryData: new("Zapret DPI bypass software", original.RecoveryData?.SecurityDescriptor ?? "", Guid.NewGuid().ToString("N")));
         var expected = original;
@@ -50,7 +50,7 @@ public sealed partial class FlowsealAdapter
             VerifyStable(expected);
             return new(FlowsealActionOutcome.Success, expected,
                 "Стратегия установлена в автозапуск. Состояние, команда, автоматический тип запуска и отсутствие раннего выхода проверены. Работа службы не подтверждает доступность сервисов.",
-                NextStep: "Проверьте нужные функции сервисов. Полная совместимость подготовки Flowseal ожидает задачи 04.");
+                NextStep: "Проверьте нужные функции сервисов. Работа службы не подтверждает доступность видео или голоса.");
         }
         catch (Exception applyError) when (Recoverable(applyError))
         {

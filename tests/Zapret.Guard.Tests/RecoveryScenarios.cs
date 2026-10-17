@@ -14,7 +14,7 @@ static class RecoveryScenarios
         var runningObserved = false;
         var restartInjected = false;
         restarted.AfterMutation = stage => { if (stage == "start") started = true; };
-        var result = await new FlowsealAdapter(new RejectCommands(), () =>
+        var result = await new FlowsealAdapter(new PreparedCommands(), () =>
         {
             if (started && runningObserved && !restartInjected)
             {
@@ -25,7 +25,7 @@ static class RecoveryScenarios
             return Task.FromResult(restarted.State);
         }, restarted).ExecuteAsync(request);
         if (result.Outcome != FlowsealActionOutcome.ApplyFailed || result.Recovery != FlowsealRecoveryOutcome.Conflict
-            || result.State.State != ServiceState.Running || result.State.Preset != "general.bat" || result.State.Process?.Id != 88
+            || result.State.State != ServiceState.Running || result.State.Preset != "general" || result.State.Process?.Id != 88
             || restarted.State != (result.State with { Ownership = restarted.State.Ownership, OwnershipReason = restarted.State.OwnershipReason }))
             throw new Exception("External process restart with unchanged configuration and operation marker must remain untouched: " + result.Recovery);
         Console.WriteLine("PASS external process restart during stability verification is preserved");
@@ -38,7 +38,7 @@ static class RecoveryScenarios
             startAt = Environment.TickCount64;
             pending.Replace(pending.State with { State = ServiceState.Starting });
         };
-        var timedOut = await new FlowsealAdapter(new RejectCommands(), () =>
+        var timedOut = await new FlowsealAdapter(new PreparedCommands(), () =>
         {
             if (startAt != null && Environment.TickCount64 - startAt.Value >= 11000 && pending.State.State == ServiceState.Starting)
                 pending.Replace(pending.State with { State = ServiceState.Running });
@@ -57,7 +57,7 @@ static class RecoveryScenarios
             new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=80"),
             RecoveryData: new("Original description", "AQID"));
         var backend = new MemoryService(original);
-        var adapter = new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(backend.State), backend);
+        var adapter = new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(backend.State), backend);
         var request = new FlowsealActionRequest(root, FlowsealAction.InstallService, new("general", Path.Combine(root, "general.bat")));
         var preflight = await adapter.PreflightAsync(request);
         if (preflight.Outcome != FlowsealActionOutcome.Ready || backend.State != original)
@@ -65,7 +65,7 @@ static class RecoveryScenarios
         Console.WriteLine("PASS complete recovery snapshot permits read-only preflight");
         var applied = await adapter.ExecuteAsync(request);
         if (applied.Outcome != FlowsealActionOutcome.Success || applied.State.State != ServiceState.Running
-            || applied.State.Configuration?.StartType != 2 || applied.State.Preset != "general.bat"
+            || applied.State.Configuration?.StartType != 2 || applied.State.Preset != "general"
             || !applied.State.Configuration.BinaryPath.Contains("--wf-tcp=80,443"))
             throw new Exception("Verified strategy must replace service and report observed stable running automatic configuration: " + applied);
         Console.WriteLine("PASS verified replacement reports stable running automatic service and exact strategy arguments");
@@ -77,7 +77,7 @@ static class RecoveryScenarios
             var initial = initialState == ServiceState.Missing ? new ServiceSnapshot(ServiceState.Missing, null)
                 : original with { State = initialState, Process = initialState == ServiceState.Running ? new(1, Path.Combine(root, "bin", "winws.exe"), 9) : null };
             var fault = new MemoryService(initial) { FailureStage = stage, FailAfterMutation = after };
-            var guarded = new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(fault.State), fault);
+            var guarded = new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(fault.State), fault);
             var result = await guarded.ExecuteAsync(request);
             if (result.Outcome != FlowsealActionOutcome.ApplyFailed || result.Recovery != FlowsealRecoveryOutcome.Restored
                 || result.State.State != initialState || result.State.Configuration != initial.Configuration
@@ -97,7 +97,7 @@ static class RecoveryScenarios
         })
         {
             var refusedBackend = new MemoryService(unsupported);
-            var refused = await new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(refusedBackend.State), refusedBackend).ExecuteAsync(request);
+            var refused = await new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(refusedBackend.State), refusedBackend).ExecuteAsync(request);
             if (refused.Outcome != FlowsealActionOutcome.RecoveryRequired || refusedBackend.State != unsupported)
                 throw new Exception("Unsupported/incomplete snapshot must leave service untouched: " + refused);
         }
@@ -115,9 +115,9 @@ static class RecoveryScenarios
                     if (intervention == "marker") foreign.Replace(foreign.State with { RecoveryData = foreign.State.RecoveryData! with { OperationId = null } });
                     if (intervention == "file") File.AppendAllText(Path.Combine(root, "lists", "list-general.txt"), "external edit");
                 };
-                var result = await new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(foreign.State), foreign).ExecuteAsync(request);
+                var result = await new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(foreign.State), foreign).ExecuteAsync(request);
                 if (result.Outcome != FlowsealActionOutcome.ApplyFailed || result.Recovery != FlowsealRecoveryOutcome.Conflict
-                    || result.State.State != ServiceState.Running || result.State.Preset != "general.bat")
+                    || result.State.State != ServiceState.Running || result.State.Preset != "general")
                     throw new Exception("External intervention must be preserved, including same-path edits or missing generation marker: " + intervention + " " + result.Recovery);
             }
             finally { File.WriteAllBytes(Path.Combine(root, "lists", "list-general.txt"), originalList); }
@@ -125,7 +125,7 @@ static class RecoveryScenarios
         Console.WriteLine("PASS same-path command edits, generation marker removal and file edits prohibit recovery overwrites");
         var recoveryFailure = new MemoryService(original) { FailureStage = "start" };
         recoveryFailure.AfterMutation = stage => { if (stage == "delete" && recoveryFailure.HasFailed) throw new IOException("Recovery delete failed"); };
-        var failedRecovery = await new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(recoveryFailure.State), recoveryFailure).ExecuteAsync(request);
+        var failedRecovery = await new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(recoveryFailure.State), recoveryFailure).ExecuteAsync(request);
         if (failedRecovery.Outcome != FlowsealActionOutcome.ApplyFailed || failedRecovery.Recovery != FlowsealRecoveryOutcome.Failed
             || !failedRecovery.ApplyError!.Contains("start") || !failedRecovery.RecoveryExplanation!.Contains("Recovery delete failed"))
             throw new Exception("Application error and failed recovery must be reported separately");
@@ -143,7 +143,7 @@ static class RecoveryScenarios
                 if (faultMode == "early-exit") waiting.Replace(waiting.State with { State = ServiceState.Stopped, Process = null });
                 if (faultMode == "pending") waiting.Replace(waiting.State with { State = ServiceState.Starting });
             };
-            var waitingAdapter = new FlowsealAdapter(new RejectCommands(), () =>
+            var waitingAdapter = new FlowsealAdapter(new PreparedCommands(), () =>
             {
                 if (startSeen && faultMode == "wait-error" && !observationFailed)
                 { observationFailed = true; throw new TimeoutException("Injected status wait failure"); }
@@ -165,12 +165,12 @@ static class RecoveryScenarios
         locked.AfterMutation = stage =>
         {
             if (stage != "delete" || !locked.HasFailed) return;
-            var other = new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(locked.State));
+            var other = new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(locked.State));
             if (other.PreflightAsync(request).GetAwaiter().GetResult().Outcome != FlowsealActionOutcome.Conflict)
                 throw new IOException("Mutex released before recovery completed");
             checkedRecoveryLock = true;
         };
-        var lockResult = await new FlowsealAdapter(new RejectCommands(), () => Task.FromResult(locked.State), locked).ExecuteAsync(request);
+        var lockResult = await new FlowsealAdapter(new PreparedCommands(), () => Task.FromResult(locked.State), locked).ExecuteAsync(request);
         if (!checkedRecoveryLock || lockResult.Recovery != FlowsealRecoveryOutcome.Restored)
             throw new Exception("Mutation guard must remain held through rollback");
         Console.WriteLine("PASS shared guard remains held for the complete recovery transaction");

@@ -29,10 +29,12 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
     public Task<DistributionDescription> DescribeAsync(string root) => Task.Run(() =>
     {
         var description = distribution.Describe(root);
-        return description with { Capabilities = description.Capabilities.Select(capability => capability.Action == FlowsealAction.InstallService
+        return description with { Explanation = description.ControlFilesVerified && description.MissingComponents.Count == 0
+            ? "Исходные файлы Flowseal 1.10.3 проверены. Подготовка и замена автозапуска доступны после проверки принадлежности и снимка службы."
+            : description.Explanation, Capabilities = description.Capabilities.Select(capability => capability.Action == FlowsealAction.InstallService
             ? capability with { Available = description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
                 && description.MissingComponents.Count == 0 && description.PathIssue == null,
-                Reason = "Ограниченная установка службы с восстановлением; требуется предварительная проверка снимка. Полная совместимость подготовки Flowseal ожидает задачи 04." }
+                Reason = "Подготовка Flowseal 1.10.3 и установка службы с восстановлением; требуется предварительная проверка снимка. Реальная приёмка на отдельной Windows ещё не завершена." }
             : capability).ToArray() };
     });
     public async Task<ServiceSnapshot> ReadStateAsync(string root) => ServiceOwnershipCheck.Classify(root,
@@ -47,7 +49,6 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
 
     private FlowsealActionResult GuardedPreflight(FlowsealActionRequest request, bool execute)
     {
-        _ = runner; // No BAT/menu execution: service writes use the explicit SCM boundary.
         var state = new ServiceSnapshot(ServiceState.Unknown, null);
         try
         {
@@ -73,7 +74,7 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                         "Служба, её конфигурация или используемые файлы изменились извне. Действие прекращено; обновите состояние перед повторной попыткой.");
                 var validation = Validate(request, current);
                 if (validation.Outcome != FlowsealActionOutcome.Ready || !execute) return validation;
-                return Replace(request, current, mutationBackend ?? service);
+                return PrepareAndReplace(request, current);
             }
             finally { if (acquired) guard.ReleaseMutex(); }
         }
@@ -95,9 +96,11 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
         var verified = selected != null && string.Equals(Path.GetDirectoryName(selected), root, StringComparison.OrdinalIgnoreCase)
             && description.Strategies.Any(s => s.Verified && Path.GetFullPath(s.Preset.FilePath).Equals(selected, StringComparison.OrdinalIgnoreCase));
         ParsedPreset? parsed = null;
-        if (verified) parsed = PresetParser.Parse(File.ReadAllText(selected!), root, PresetParser.ReadGameFilter(root));
+        // Preflight inspects static dependencies only. Actual port values come from upstream preparation.
+        if (verified) parsed = PresetParser.Parse(File.ReadAllText(selected!), root);
         var paths = (description.RequiredComponents ?? []).Select(p => Path.Combine(root, p))
-            .Concat(parsed?.ReferencedFiles ?? []).Concat([Path.Combine(root, "service.bat"), Path.Combine(root, "utils", "game_filter.enabled")]);
+            .Concat(parsed?.ReferencedFiles ?? []).Concat(UserListSeeds.Keys.Select(name => Path.Combine(root, "lists", name)))
+            .Concat([Path.Combine(root, "service.bat"), Path.Combine(root, "utils", "game_filter.enabled")]);
         if (selected != null) paths = paths.Append(selected);
         var files = string.Join('\n', paths.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Select(FileStamp));
         return new(state, description, selected, verified, parsed, files);
@@ -128,13 +131,20 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                 "Стратегия или service.bat не соответствуют проверенной Flowseal 1.10.3. Неподдерживаемый BAT не выполняется; восстановите исходные файлы.");
         if (input.Description.PathIssue != null)
             return new(FlowsealActionOutcome.InvalidRequest, state, input.Description.PathIssue);
+        var flag = Path.Combine(input.Description.Root, "utils", "game_filter.enabled");
+        if (File.Exists(flag) && (!ServiceOwnershipCheck.TryProvePath(flag, out _)
+            || File.ReadAllBytes(flag).Any(b => !(b is >= (byte)'a' and <= (byte)'z' or >= (byte)'A' and <= (byte)'Z'
+                or >= (byte)'0' and <= (byte)'9' or (byte)'=' or (byte)'_' or (byte)',' or (byte)';' or (byte)' '
+                or (byte)'-' or (byte)'\t' or (byte)'\r' or (byte)'\n'))))
+            return new(FlowsealActionOutcome.InvalidRequest, state,
+                "Файл Game Filter содержит неподдерживаемые символы или является ссылкой. Для безопасного вызова Flowseal используйте ASCII-настройки mode/tcp/udp без команд CMD.");
         var missing = input.Description.MissingComponents.Where(p => !p.EndsWith(".bat", StringComparison.OrdinalIgnoreCase))
-            .Concat(input.Parsed!.ReferencedFiles.Where(p => !File.Exists(p))).ToArray();
+            .Concat(input.Parsed!.ReferencedFiles.Where(p => !File.Exists(p) && !CanInitializeUserList(input.Description.Root, p))).ToArray();
         if (missing.Length != 0)
             return new(FlowsealActionOutcome.MissingFiles, state,
                 "Не хватает обязательных файлов: " + string.Join(", ", missing) + ". Распакуйте полный архив; действие не начато.");
         if ((input.Description.RequiredComponents ?? []).Select(p => Path.Combine(input.Description.Root, p))
-            .Concat(input.Parsed.ReferencedFiles).Any(p => !ServiceOwnershipCheck.TryProvePath(p, out _)))
+            .Concat(input.Parsed.ReferencedFiles).Any(p => !ServiceOwnershipCheck.TryProvePath(p, out _) && !CanInitializeUserList(input.Description.Root, p)))
             return new(FlowsealActionOutcome.InvalidRequest, state,
                 "Используемые файлы проходят через ссылки или недоступны для проверки. Выберите локальную распакованную поставку; действие не начато.");
         if (request.Action != FlowsealAction.InstallService || (readServiceState != null && mutationBackend == null && state.Ownership == ServiceOwnership.Missing))
@@ -144,7 +154,7 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
             return new(FlowsealActionOutcome.RecoveryRequired, state,
                 "Полный поддерживаемый снимок службы получить нельзя. Изменения не начаты: " + (state.ObservationError ?? "параметры восстановления не подтверждены."));
         return new(FlowsealActionOutcome.Ready, state,
-            "Снимок и стратегия проверены. Доступна ограниченная установка с восстановлением. Полная совместимость подготовки Flowseal ожидает задачи 04.");
+            "Снимок и стратегия проверены. При установке будут подготовлены пользовательские списки, TCP timestamps и Game Filter из Flowseal 1.10.3.");
     }
 
     private sealed record Inputs(ServiceSnapshot State, DistributionDescription Description, string? Selected,

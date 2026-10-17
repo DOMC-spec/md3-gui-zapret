@@ -130,12 +130,13 @@ try
         var preset = PresetParser.Parse("winws.exe --hostlist=../lists/list-general.txt", root);
         Equal(Path.Combine(root, "lists", "list-general.txt"), preset.ReferencedFiles[0]);
     });
-    Test("Game filter mode and port ranges follow flag file", () =>
+    Test("Preset uses explicit Game Filter values exported by upstream", () =>
     {
         File.WriteAllText(Path.Combine(root, "utils", "game_filter.enabled"), "mode=udp\ntcp=2000-3000\nudp=4000-5000");
-        var vars = PresetParser.ReadGameFilter(root);
-        Equal("12", vars["GameFilterTCP"]);
-        Equal("4000-5000", vars["GameFilterUDP"]);
+        var parsed = PresetParser.Parse("winws.exe --wf-tcp=%GameFilterTCP% --wf-udp=%GameFilterUDP%", root,
+            new Dictionary<string, string> { ["GameFilterTCP"] = "12", ["GameFilterUDP"] = "4000-5000" });
+        Equal("--wf-tcp=12", parsed.Arguments[0]);
+        Equal("--wf-udp=4000-5000", parsed.Arguments[1]);
     });
     Test("Domain validation supports IDN and rejects URLs", () =>
     {

@@ -2,6 +2,13 @@ using System.Diagnostics;
 using Zapret.Gui.Services;
 using Zapret.Core;
 
+if (args.FirstOrDefault() == "--capture-bin")
+{
+    if (args.Length < 6) throw new Exception("Incomplete upstream command capture");
+    File.WriteAllText(args[1], args[5]);
+    return;
+}
+
 if (args.Length == 4 && args[0] == "--hold-guard")
 {
     using var ready = EventWaitHandle.OpenExisting(args[2]);
@@ -26,6 +33,17 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--strategy-parity"))
+    {
+        await PreparationScenarios.RunStrategies(root);
+        return;
+    }
+    if (args.Contains("--preparation-only"))
+    {
+        await PreparationScenarios.Run(root);
+        return;
+    }
+    await PreparationScenarios.Run(root);
     if (args.Contains("--review-recovery"))
     {
         await RecoveryScenarios.RunReview(root);
@@ -83,7 +101,8 @@ try
         var bytes = File.ReadAllBytes(file);
         File.Delete(file);
         var refused = await adapter.ExecuteAsync(request);
-        if (refused.Outcome != FlowsealActionOutcome.MissingFiles || File.Exists(file) || runner.Commands != 0)
+        var expectedOutcome = relative == "lists/list-general-user.txt" ? FlowsealActionOutcome.RecoveryRequired : FlowsealActionOutcome.MissingFiles;
+        if (refused.Outcome != expectedOutcome || File.Exists(file) || runner.Commands != 0)
             throw new Exception("Missing required or referenced file must be refused without creating it: " + relative);
         File.WriteAllBytes(file, bytes);
     }

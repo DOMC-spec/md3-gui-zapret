@@ -46,7 +46,7 @@ public partial class MainViewModel : ObservableObject
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
     public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";
     public string MissingComponentsText => Distribution?.MissingComponents.Count > 0 ? "Отсутствуют: " + string.Join(", ", Distribution.MissingComponents) : "";
-    public string PathLimitations => Distribution?.PathIssue ?? "Автозапуск продолжает работать после закрытия окна. Полное соответствие подготовки Flowseal проверяется на следующем этапе.";
+    public string PathLimitations => Distribution?.PathIssue ?? "Автозапуск продолжает работать после закрытия окна.";
     public string StrategyReadiness => Distribution?.Strategies.FirstOrDefault(s => s.Preset.FilePath == SelectedPreset?.FilePath)?.Explanation ?? "Выберите стратегию из поставки.";
     public string CapabilitySummary => Distribution == null ? "" : string.Join("\n\n", Distribution.Capabilities.Select(c => ActionName(c.Action) + ": " + c.Reason));
     private static string ActionName(FlowsealAction action) => action switch

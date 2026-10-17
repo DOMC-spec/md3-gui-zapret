@@ -75,32 +75,4 @@ public static class PresetParser
         return new ParsedPreset(normalized, files.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
-    public static IReadOnlyDictionary<string, string> ReadGameFilter(string root)
-    {
-        var file = Path.Combine(root, "utils", "game_filter.enabled");
-        var mode = "disabled";
-        var tcp = "1024-65535";
-        var udp = tcp;
-        if (File.Exists(file))
-        {
-            var lines = File.ReadAllLines(file);
-            // Older releases use an empty flag file as the enabled state.
-            mode = lines.All(string.IsNullOrWhiteSpace) ? "all" : "disabled";
-            foreach (var line in lines)
-            {
-                var pair = line.Trim().Split('=', 2);
-                var key = pair[0].ToLowerInvariant();
-                if (key == "mode" && pair.Length == 2) mode = pair[1].ToLowerInvariant();
-                else if (key is "all" or "tcp" or "udp" && pair.Length == 1) mode = key;
-                else if (pair.Length == 2 && Regex.IsMatch(pair[1], @"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$"))
-                { if (key == "tcp") tcp = pair[1]; if (key == "udp") udp = pair[1]; }
-            }
-        }
-        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["GameFilterTCP"] = mode is "all" or "tcp" ? tcp : "12",
-            ["GameFilterUDP"] = mode is "all" or "udp" ? udp : "12",
-            ["GameFilter"] = mode is "all" or "tcp" ? tcp : mode == "udp" ? udp : "12"
-        };
-    }
 }
