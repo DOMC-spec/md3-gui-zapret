@@ -200,7 +200,6 @@ public partial class MainViewModel : ObservableObject
         ShowObservedState(result.State);
         ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
     }
-    private bool CanApply() => !IsBusy && SelectedPreset != null && Allows(FlowsealAction.InstallService);
 
     private async Task DeniedActionAsync(FlowsealAction action)
     {
