@@ -69,6 +69,14 @@ internal static class Program
             tabs.SelectedIndex = 0;
             if (args.Contains("--lists")) tabs.SelectedIndex = 1;
             grid.UpdateLayout();
+            if (args.Contains("--manual-view"))
+            {
+                var button = Find<Button>(grid, b => ReferenceEquals(b.Command, viewModel.StartManualCommand))
+                    ?? throw new Exception("Manual trial button missing");
+                for (DependencyObject? parent = button; parent != null; parent = VisualTreeHelper.GetParent(parent))
+                    if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
+                grid.UpdateLayout();
+            }
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
@@ -213,13 +221,13 @@ internal static class Program
         if (contrast < minimum) throw new Exception($"{foreground}/{background}: contrast {contrast:F2} < {minimum}");
     }
 
-    private static T? Find<T>(DependencyObject parent) where T : DependencyObject
+    private static T? Find<T>(DependencyObject parent, Func<T, bool>? match = null) where T : DependencyObject
     {
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
         {
             var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T found) return found;
-            if (Find<T>(child) is { } nested) return nested;
+            if (child is T found && (match == null || match(found))) return found;
+            if (Find(child, match) is { } nested) return nested;
         }
         return null;
     }
