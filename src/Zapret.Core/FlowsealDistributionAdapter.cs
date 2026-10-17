@@ -9,7 +9,7 @@ public sealed record FlowsealCapability(FlowsealAction Action, bool Available, s
 public sealed record DistributionStrategy(Preset Preset, bool Verified, string Explanation);
 public sealed record DistributionDescription(string Root, string? DeclaredVersion, bool ControlFilesVerified,
     IReadOnlyList<DistributionStrategy> Strategies, IReadOnlyList<string> MissingComponents,
-    string? PathIssue, string Explanation, IReadOnlyList<FlowsealCapability> Capabilities);
+    string? PathIssue, string Explanation, IReadOnlyList<FlowsealCapability> Capabilities, bool ServiceScriptVerified = false, IReadOnlyList<string>? RequiredComponents = null);
 
 /// <summary>Inspects release files only. It never executes BAT or changes settings.</summary>
 public sealed class FlowsealDistributionAdapter
@@ -49,7 +49,7 @@ public sealed class FlowsealDistributionAdapter
             var result = Result(root, string.IsNullOrEmpty(version) ? null : version, controlsVerified, strategies, missing, pathIssue, explanation);
             var editableLists = Matches(service, Manifest.ControlFiles.Single(c => c.Kind == "service")) && Directory.Exists(Path.Combine(root, "lists"));
             var testsVerified = Matches(Path.Combine(root, "utils", "test zapret.ps1"), Manifest.ControlFiles.Single(c => c.Kind == "tool"));
-            return result with { Capabilities = result.Capabilities.Select(capability => capability.Action switch
+            return result with { ServiceScriptVerified = Matches(service, Manifest.ControlFiles.Single(c => c.Kind == "service")), Capabilities = result.Capabilities.Select(capability => capability.Action switch
             {
                 FlowsealAction.EditLists => new FlowsealCapability(capability.Action, editableLists, editableLists
                     ? "Редактирование пользовательских списков доступно с резервной копией и проверкой внешних изменений."
@@ -70,7 +70,7 @@ public sealed class FlowsealDistributionAdapter
                     ? "Чтение состояния доступно без выполнения BAT."
                     : pathIssue ?? (missing.Count > 0 ? "Отсутствуют компоненты поставки; распакуйте полный архив. " : "")
                         + (!verified ? "Исходные управляющие файлы не подтверждены. " : "")
-                        + "Действие пока недоступно: соответствие выполнения Flowseal ещё не проверено.")).ToArray());
+                        + "Действие пока недоступно: соответствие выполнения Flowseal ещё не проверено.")).ToArray(), RequiredComponents: Manifest.RequiredComponents);
 
     private static bool Matches(string path, ControlFile? reference) => reference != null && File.Exists(path)
         && Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).Equals(reference.Sha256, StringComparison.OrdinalIgnoreCase);
