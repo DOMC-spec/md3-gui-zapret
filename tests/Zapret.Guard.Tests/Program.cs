@@ -26,6 +26,11 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--review-recovery"))
+    {
+        await RecoveryScenarios.RunReview(root);
+        return;
+    }
     await RecoveryScenarios.Run(root);
     var runner = new RejectCommands();
     var installedByBat = new ServiceSnapshot(ServiceState.Stopped, null,

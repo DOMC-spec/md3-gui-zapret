@@ -54,7 +54,9 @@ public sealed partial class FlowsealAdapter
         }
         catch (Exception applyError) when (Recoverable(applyError))
         {
-            var recovery = changed ? Recover() : (FlowsealRecoveryOutcome.NotNeeded, SafeRead(), "Изменения не начаты.");
+            var recovery = applyError is ServiceConflictException
+                ? (FlowsealRecoveryOutcome.Conflict, SafeRead(), "Обнаруженное стороннее изменение сохранено; автоматическое восстановление прекращено.")
+                : changed ? Recover() : (FlowsealRecoveryOutcome.NotNeeded, SafeRead(), "Изменения не начаты.");
             return new(FlowsealActionOutcome.ApplyFailed, recovery.Item2, "Не удалось применить стратегию автозапуска.",
                 recovery.Item1, applyError.Message, recovery.Item3,
                 recovery.Item1 == FlowsealRecoveryOutcome.Restored
@@ -140,7 +142,7 @@ public sealed partial class FlowsealAdapter
                 if (current.State != ServiceState.Missing && !SameEntry(current, original))
                 {
                     if (current.State is ServiceState.Starting or ServiceState.Stopping)
-                        throw new IOException("Переходное состояние службы не позволяет безопасно восстановить её.");
+                        current = WaitForRecoverySettle(desired);
                     if (current.State == ServiceState.Running)
                     { CheckRecovery(current); backend.Stop(current); current = WaitFor(desired, ServiceState.Stopped); }
                     else if (current.State != ServiceState.Stopped) throw new ServiceConflictException("Неизвестное состояние созданной службы.");
@@ -169,6 +171,20 @@ public sealed partial class FlowsealAdapter
             var observed = Observe(request);
             if (observed.Files != input.Files || !SameObservation(recoveryExpected, observed.State))
                 throw new ServiceConflictException("Стороннее изменение во время восстановления сохранено.");
+        }
+        ServiceSnapshot WaitForRecoverySettle(ServiceSnapshot entry)
+        {
+            // Recovery has its own bounded wait: an apply timeout must not abandon an owned transition.
+            var deadline = Environment.TickCount64 + 10000;
+            while (true)
+            {
+                var observed = Observe(request);
+                if (observed.Files != input.Files || !SameEntry(observed.State, entry))
+                    throw new ServiceConflictException("Стороннее изменение во время ожидания восстановления сохранено.");
+                if (observed.State.State is not (ServiceState.Starting or ServiceState.Stopping)) return observed.State;
+                if (Environment.TickCount64 >= deadline) throw new TimeoutException("Переходное состояние своей службы не завершилось за время восстановления.");
+                Thread.Sleep(100);
+            }
         }
     }
     private static bool Recoverable(Exception error) => error is IOException or UnauthorizedAccessException or System.Security.SecurityException
