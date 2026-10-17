@@ -180,9 +180,9 @@ internal static class Program
             var model = new MainViewModel(new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot)), temporary);
             Complete(model.InitializeAsync());
             Complete(model.CheckActionCommand.ExecuteAsync(null));
-            if (!model.ServiceOwnershipText.Contains("Своя служба") || !model.ActionReadiness.Contains("восстановление прежней службы")
+            if (!model.ServiceOwnershipText.Contains("Своя служба") || !model.ActionReadiness.Contains("Полный поддерживаемый снимок")
                 || model.ApplyCommand.CanExecute(null) || model.RemoveCommand.CanExecute(null))
-                throw new Exception("GUI must show verified ownership and the recovery-required refusal through the real adapter");
+                throw new Exception("GUI must show verified ownership and refuse replacement when a full recovery snapshot is unavailable");
             model.Notifications.Dispose();
         }
         finally
