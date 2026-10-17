@@ -19,7 +19,12 @@ public sealed class ProcessRunner : ICommandRunner
             RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = AppContext.BaseDirectory
         };
-        foreach (var argument in arguments) info.ArgumentList.Add(argument);
+        // CMD parses its /c tail as shell source, not as CRT argv. ArgumentList would
+        // insert backslash-escaped quotes, corrupting quoted paths in this fixed invocation.
+        if (executable.Equals(Path.Combine(Environment.SystemDirectory, "cmd.exe"), StringComparison.OrdinalIgnoreCase)
+            && arguments.Length == 4 && arguments[0] == "/d" && arguments[1] == "/v:off" && arguments[2] == "/c")
+            info.Arguments = "/d /v:off /c " + arguments[3];
+        else foreach (var argument in arguments) info.ArgumentList.Add(argument);
         using var process = Process.Start(info) ?? throw new IOException($"Не удалось запустить {executable}.");
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();

@@ -12,6 +12,8 @@ namespace Zapret.Gui.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly IFlowsealAdapter adapter;
+    private bool installReady;
+    public event EventHandler? CloseRequested;
     public MainViewModel() : this(new FlowsealAdapter(new ProcessRunner()), AppContext.BaseDirectory) { }
     public MainViewModel(IFlowsealAdapter adapter, string applicationDirectory)
     {
@@ -31,6 +33,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string statusText = "Проверка…";
     [ObservableProperty] private string activePreset = "—";
     [ObservableProperty] private string serviceOwnershipText = "Принадлежность службы не проверена.";
+    [ObservableProperty] private string autostartText = "Автозапуск не проверен.";
+    private ServiceOwnership serviceOwnership = ServiceOwnership.Unknown;
     [ObservableProperty] private string actionReadiness = "Выберите стратегию и проверьте действие.";
     [ObservableProperty] private ServiceState currentState = ServiceState.Missing;
     [ObservableProperty] private string error = "";
@@ -44,7 +48,7 @@ public partial class MainViewModel : ObservableObject
     public string DistributionVersion => Distribution?.DeclaredVersion is { } version ? "Заявленная версия поставки: " + version : "Версия поставки неизвестна";
     public string ReadinessText => Distribution?.Explanation ?? "Выберите папку поставки или обновите состояние.";
     public string MissingComponentsText => Distribution?.MissingComponents.Count > 0 ? "Отсутствуют: " + string.Join(", ", Distribution.MissingComponents) : "";
-    public string PathLimitations => Distribution?.PathIssue ?? "Пробелы в пути поддерживаются при чтении. Выполнение действий пока недоступно.";
+    public string PathLimitations => Distribution?.PathIssue ?? "Автозапуск продолжает работать после закрытия окна.";
     public string StrategyReadiness => Distribution?.Strategies.FirstOrDefault(s => s.Preset.FilePath == SelectedPreset?.FilePath)?.Explanation ?? "Выберите стратегию из поставки.";
     public string CapabilitySummary => Distribution == null ? "" : string.Join("\n\n", Distribution.Capabilities.Select(c => ActionName(c.Action) + ": " + c.Reason));
     private static string ActionName(FlowsealAction action) => action switch
@@ -58,13 +62,24 @@ public partial class MainViewModel : ObservableObject
     private bool Allows(FlowsealAction action) => Distribution?.Capabilities.Any(c => c.Action == action && c.Available) == true;
     private string Unavailable(FlowsealAction action) => Distribution?.Capabilities.FirstOrDefault(c => c.Action == action)?.Reason ?? "Сначала выберите поставку Flowseal.";
     public bool CanEditLists => !IsBusy && Allows(FlowsealAction.EditLists);
-    private bool CanRemove() => !IsBusy && Allows(FlowsealAction.RemoveService);
+    private bool CanControlService(FlowsealAction action) => !IsBusy && Allows(action)
+        && serviceOwnership == ServiceOwnership.Owned && CurrentState is ServiceState.Running or ServiceState.Stopped;
+    private bool CanRemove() => CanControlService(FlowsealAction.RemoveService);
+    private bool CanStartService() => CanControlService(FlowsealAction.StartService) && CurrentState == ServiceState.Stopped;
+    private bool CanStopService() => CanControlService(FlowsealAction.StopService) && CurrentState == ServiceState.Running;
+    private void NotifyServiceControls()
+    {
+        RemoveCommand.NotifyCanExecuteChanged();
+        StartServiceCommand.NotifyCanExecuteChanged();
+        StopServiceCommand.NotifyCanExecuteChanged();
+    }
     public bool CanInteract => !IsBusy;
     partial void OnDistributionChanged(DistributionDescription? value)
     {
+        installReady = false;
         foreach (var name in new[] { nameof(DistributionVersion), nameof(ReadinessText), nameof(MissingComponentsText), nameof(PathLimitations), nameof(StrategyReadiness), nameof(CapabilitySummary), nameof(CanEditLists) }) OnPropertyChanged(name);
         ApplyCommand.NotifyCanExecuteChanged();
-        RemoveCommand.NotifyCanExecuteChanged();
+        NotifyServiceControls();
         SaveHostlistCommand.NotifyCanExecuteChanged();
         AddDomainCommand.NotifyCanExecuteChanged();
     }
@@ -80,7 +95,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanEditLists));
         SelectDistributionCommand.NotifyCanExecuteChanged();
         ApplyCommand.NotifyCanExecuteChanged();
-        RemoveCommand.NotifyCanExecuteChanged();
+        NotifyServiceControls();
         RefreshCommand.NotifyCanExecuteChanged();
         CheckActionCommand.NotifyCanExecuteChanged();
         LoadHostlistCommand.NotifyCanExecuteChanged();
@@ -90,9 +105,10 @@ public partial class MainViewModel : ObservableObject
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnSelectedPresetChanged(Preset? value)
     {
+        installReady = false;
         ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(StrategyReadiness));
-        ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы обновить причину недоступности.";
+        ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы проверить возможность замены автозапуска.";
         CheckActionCommand.NotifyCanExecuteChanged();
     }
     partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
@@ -124,6 +140,14 @@ public partial class MainViewModel : ObservableObject
 
     private void ShowObservedState(ServiceSnapshot snapshot)
     {
+        serviceOwnership = snapshot.Ownership;
+        AutostartText = snapshot.State == ServiceState.Missing ? "Автозапуск не установлен." : snapshot.Configuration?.StartType switch
+        {
+            2 => "Автозапуск при загрузке Windows включён.",
+            3 => "Автозапуск выключен; служба зарегистрирована для запуска вручную.",
+            4 => "Запуск зарегистрированной службы отключён в Windows.",
+            _ => "Тип запуска службы неизвестен."
+        };
         ServiceOwnershipText = snapshot.OwnershipReason;
         StatusText = snapshot.State switch
         {
@@ -132,6 +156,7 @@ public partial class MainViewModel : ObservableObject
             ServiceState.Stopping => "Останавливается…", ServiceState.Paused => "Приостановлена", _ => "Неизвестно"
         };
         CurrentState = snapshot.State;
+        NotifyServiceControls();
         ActivePreset = snapshot.Preset ?? (snapshot.State == ServiceState.Missing ? "Стратегия ещё не применена" : "Стратегия не указана");
     }
 
@@ -160,6 +185,7 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadDistributionAsync()
     {
+        installReady = false;
         var name = SelectedPreset?.Name;
         Distribution = await adapter.DescribeAsync(Root);
         Root = Distribution.Root;
@@ -181,13 +207,32 @@ public partial class MainViewModel : ObservableObject
         await ReadStatusAsync();
         await CheckInstallReadinessAsync();
     }
-    private bool CanApply() => !IsBusy && SelectedPreset != null && Allows(FlowsealAction.InstallService);
+    private bool CanApply() => !IsBusy && SelectedPreset != null && installReady;
 
     [RelayCommand(CanExecute = nameof(CanApply))]
-    private Task ApplyAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.InstallService));
+    private async Task ApplyAsync()
+    {
+        var succeeded = false;
+        await PerformAsync(async () =>
+        {
+            installReady = false;
+            ActionReadiness = "Замена автозапуска… При ошибке оболочка попытается вернуть прежнюю службу. Дождитесь результата.";
+            var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+            ShowActionResult(result);
+            succeeded = result.Outcome == FlowsealActionOutcome.Success;
+            if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
+        });
+        if (succeeded && CloseAfterApply && !IsDirty) CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand(CanExecute = nameof(CanRemove))]
-    private Task RemoveAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.RemoveService));
+    private Task RemoveAsync() => PerformAsync(() => ExecuteServiceControlAsync(FlowsealAction.RemoveService));
+
+    [RelayCommand(CanExecute = nameof(CanStartService))]
+    private Task StartServiceAsync() => PerformAsync(() => ExecuteServiceControlAsync(FlowsealAction.StartService));
+
+    [RelayCommand(CanExecute = nameof(CanStopService))]
+    private Task StopServiceAsync() => PerformAsync(() => ExecuteServiceControlAsync(FlowsealAction.StopService));
 
     private bool CanCheckAction() => !IsBusy && SelectedPreset != null;
     [RelayCommand(CanExecute = nameof(CanCheckAction))]
@@ -195,18 +240,32 @@ public partial class MainViewModel : ObservableObject
 
     private async Task CheckInstallReadinessAsync()
     {
+        installReady = false;
         if (SelectedPreset == null) { ActionReadiness = "Сначала выберите стратегию из поставки."; return; }
         var result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+        installReady = result.Outcome == FlowsealActionOutcome.Ready;
+        ApplyCommand.NotifyCanExecuteChanged();
         ShowObservedState(result.State);
         ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
     }
 
-    private async Task DeniedActionAsync(FlowsealAction action)
+    private async Task ExecuteServiceControlAsync(FlowsealAction action)
     {
-        var result = await adapter.ExecuteAsync(new(Root, action, SelectedPreset));
+        installReady = false;
+        ApplyCommand.NotifyCanExecuteChanged();
+        ActionReadiness = ActionName(action) + "… Дождитесь подтверждения состояния Windows.";
+        var result = await adapter.ExecuteAsync(new(Root, action));
+        ShowActionResult(result);
+    }
+
+    private void ShowActionResult(FlowsealActionResult result)
+    {
         ShowObservedState(result.State);
-        ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
-        Error = result.Explanation;
+        ActionReadiness = string.Join("\n\n", new[] { result.Explanation,
+            result.RecoveryExplanation, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)));
+        Error = result.Outcome == FlowsealActionOutcome.Success ? "" : string.Join("\n\n",
+            new[] { result.ApplyError, result.Explanation, result.RecoveryExplanation, result.NextStep }
+                .Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
     }
     [RelayCommand(CanExecute = nameof(CanInteract))]
     private async Task LoadHostlistAsync() => await PerformAsync(async () =>

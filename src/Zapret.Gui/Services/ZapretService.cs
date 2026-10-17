@@ -11,12 +11,14 @@ public enum ServiceOwnership { Missing, Owned, Foreign, Unknown }
 public sealed record ServiceConfiguration(string BinaryPath, uint StartType = 2, uint ServiceType = 16,
     uint ErrorControl = 1, string Account = "LocalSystem", string Dependencies = "", string DisplayName = "zapret", string LoadOrderGroup = "", uint TagId = 0);
 public sealed record ServiceProcess(uint Id, string? Executable, long? StartedAtUtcTicks);
+public sealed record ServiceRecoveryData(string Description, string SecurityDescriptor, string? OperationId = null);
 public sealed record ServiceSnapshot(ServiceState State, string? Preset, ServiceConfiguration? Configuration = null,
     ServiceProcess? Process = null, ServiceOwnership Ownership = ServiceOwnership.Unknown,
-    string OwnershipReason = "Принадлежность службы не проверена.", string? ObservationError = null);
+    string OwnershipReason = "Принадлежность службы не проверена.", string? ObservationError = null,
+    ServiceRecoveryData? RecoveryData = null);
 
-/// <summary>Read-only SCM access. No service, process, driver or registry mutation entry points.</summary>
-public sealed class ZapretService
+/// <summary>SCM observation with a fail-closed recovery snapshot; guarded mutation is implemented in ServiceMutationBackend.</summary>
+public sealed partial class ZapretService
 {
     public Task<ServiceSnapshot> ReadAsync() => Task.Run(Read);
 
@@ -24,7 +26,7 @@ public sealed class ZapretService
     {
         using var manager = OpenSCManager(null, null, 1); // SC_MANAGER_CONNECT
         if (manager.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
-        using var service = OpenService(manager, "zapret", 1 | 4); // QUERY_CONFIG | QUERY_STATUS only
+        using var service = OpenService(manager, "zapret", 1 | 4); // QUERY_CONFIG | QUERY_STATUS: basic state remains available without ACL access.
         if (service.IsInvalid)
         {
             var code = Marshal.GetLastWin32Error();
@@ -93,13 +95,16 @@ public sealed class ZapretService
             { process = new(status.ProcessId, null, null); }
         }
         string? preset = null;
+        ServiceRecoveryData? recovery = null;
         try
         {
             using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\zapret");
             preset = key?.GetValue("zapret-discord-youtube", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+            recovery = ReadRecoveryData(service, key);
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
-        return new(state, preset, configuration, process, ObservationError: observationError);
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException or Win32Exception)
+        { observationError = (observationError == null ? "" : observationError + "; ") + "Снимок: " + ex.Message; }
+        return new(state, preset, configuration, process, ObservationError: observationError, RecoveryData: recovery);
     }
 
     private static ServiceConfiguration ReadRegistryConfiguration()
