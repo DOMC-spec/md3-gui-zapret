@@ -1,7 +1,31 @@
+# Build output and downloaded packages
 **/bin/
 **/obj/
-artifacts/
-.vs/
+/artifacts/
+/.packages/
+
+# Local IDE state
+/.vs/
+/.idea/
 *.user
-.scratch/
-.packages/
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local agent skills, settings and scratch files
+/.agents/
+/.codex/
+/.claude/
+/.scratch/
+/skills-lock.json
+
+# Local environment configuration (keep shareable templates)
+/.env
+/.env.*
+!/.env.example
+!/.env.sample
+
+# Local logs and temporary files
+/logs/
+*.tmp
+*.bak
