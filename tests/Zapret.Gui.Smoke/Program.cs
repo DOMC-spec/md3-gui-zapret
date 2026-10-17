@@ -47,7 +47,9 @@ internal static class Program
             if (args.Contains("--running")) snapshot = new(ServiceState.Running, "general (ALT)",
                 new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(selectedRoot, "bin", "winws.exe"))),
                 new ServiceProcess(19, Path.Combine(selectedRoot, "bin", "winws.exe"), 100));
-            var viewModel = new MainViewModel(new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot)), selectedRoot);
+            IFlowsealAdapter adapter = args.Contains("--interrupted-preview") ? InterruptedPresentationChecks.Preview(selectedRoot)
+                : new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot));
+            var viewModel = new MainViewModel(adapter, selectedRoot);
             window.DataContext = viewModel;
             Complete(viewModel.InitializeAsync());
             if (args.Contains("--error")) viewModel.Error = "Не найден bin\\winws.exe. Поместите конфигуратор в корневую папку zapret.";

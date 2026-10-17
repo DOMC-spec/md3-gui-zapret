@@ -6,6 +6,8 @@ using Zapret.Gui.ViewModels;
 
 internal static class InterruptedPresentationChecks
 {
+    public static IFlowsealAdapter Preview(string root) => new RecoveryAdapter(root);
+
     public static void Run(Action<Task> complete)
     {
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
