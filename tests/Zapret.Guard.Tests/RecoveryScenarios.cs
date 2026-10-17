@@ -3,6 +3,54 @@ using Zapret.Gui.Services;
 
 static class RecoveryScenarios
 {
+    public static async Task RunReview(string root)
+    {
+        var original = new ServiceSnapshot(ServiceState.Stopped, "original.bat",
+            new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=80"),
+            RecoveryData: new("Original description", "AQID"));
+        var request = new FlowsealActionRequest(root, FlowsealAction.InstallService, new("general", Path.Combine(root, "general.bat")));
+        var restarted = new MemoryService(original);
+        var started = false;
+        var runningObserved = false;
+        var restartInjected = false;
+        restarted.AfterMutation = stage => { if (stage == "start") started = true; };
+        var result = await new FlowsealAdapter(new RejectCommands(), () =>
+        {
+            if (started && runningObserved && !restartInjected)
+            {
+                restartInjected = true;
+                restarted.Replace(restarted.State with { Process = restarted.State.Process! with { Id = 88, StartedAtUtcTicks = 456 } });
+            }
+            if (started) runningObserved = true;
+            return Task.FromResult(restarted.State);
+        }, restarted).ExecuteAsync(request);
+        if (result.Outcome != FlowsealActionOutcome.ApplyFailed || result.Recovery != FlowsealRecoveryOutcome.Conflict
+            || result.State.State != ServiceState.Running || result.State.Preset != "general.bat" || result.State.Process?.Id != 88
+            || restarted.State != (result.State with { Ownership = restarted.State.Ownership, OwnershipReason = restarted.State.OwnershipReason }))
+            throw new Exception("External process restart with unchanged configuration and operation marker must remain untouched: " + result.Recovery);
+        Console.WriteLine("PASS external process restart during stability verification is preserved");
+
+        var pending = new MemoryService(original);
+        long? startAt = null;
+        pending.AfterMutation = stage =>
+        {
+            if (stage != "start") return;
+            startAt = Environment.TickCount64;
+            pending.Replace(pending.State with { State = ServiceState.Starting });
+        };
+        var timedOut = await new FlowsealAdapter(new RejectCommands(), () =>
+        {
+            if (startAt != null && Environment.TickCount64 - startAt.Value >= 11000 && pending.State.State == ServiceState.Starting)
+                pending.Replace(pending.State with { State = ServiceState.Running });
+            return Task.FromResult(pending.State);
+        }, pending).ExecuteAsync(request);
+        if (timedOut.Outcome != FlowsealActionOutcome.ApplyFailed || timedOut.Recovery != FlowsealRecoveryOutcome.Restored
+            || timedOut.State.State != ServiceState.Stopped || timedOut.State.Configuration != original.Configuration
+            || timedOut.State.RecoveryData != original.RecoveryData)
+            throw new Exception("Own pending start settling after the apply timeout must still restore the original stopped service: " + timedOut.Recovery);
+        Console.WriteLine("PASS timed-out own start settles under recovery guard and restores original configuration/state");
+    }
+
     public static async Task Run(string root)
     {
         var original = new ServiceSnapshot(ServiceState.Stopped, "original.bat",
@@ -126,6 +174,7 @@ static class RecoveryScenarios
         if (!checkedRecoveryLock || lockResult.Recovery != FlowsealRecoveryOutcome.Restored)
             throw new Exception("Mutation guard must remain held through rollback");
         Console.WriteLine("PASS shared guard remains held for the complete recovery transaction");
+        await RunReview(root);
     }
 }
 

@@ -17,7 +17,7 @@ public sealed record ServiceSnapshot(ServiceState State, string? Preset, Service
     string OwnershipReason = "Принадлежность службы не проверена.", string? ObservationError = null,
     ServiceRecoveryData? RecoveryData = null);
 
-/// <summary>Read-only SCM access. No service, process, driver or registry mutation entry points.</summary>
+/// <summary>SCM observation with a fail-closed recovery snapshot; guarded mutation is implemented in ServiceMutationBackend.</summary>
 public sealed partial class ZapretService
 {
     public Task<ServiceSnapshot> ReadAsync() => Task.Run(Read);
