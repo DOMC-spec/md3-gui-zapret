@@ -30,6 +30,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Preset? selectedPreset;
     [ObservableProperty] private string statusText = "Проверка…";
     [ObservableProperty] private string activePreset = "—";
+    [ObservableProperty] private string serviceOwnershipText = "Принадлежность службы не проверена.";
+    [ObservableProperty] private string actionReadiness = "Выберите стратегию и проверьте действие.";
     [ObservableProperty] private ServiceState currentState = ServiceState.Missing;
     [ObservableProperty] private string error = "";
     [ObservableProperty] private bool isBusy;
@@ -80,6 +82,7 @@ public partial class MainViewModel : ObservableObject
         ApplyCommand.NotifyCanExecuteChanged();
         RemoveCommand.NotifyCanExecuteChanged();
         RefreshCommand.NotifyCanExecuteChanged();
+        CheckActionCommand.NotifyCanExecuteChanged();
         LoadHostlistCommand.NotifyCanExecuteChanged();
         SaveHostlistCommand.NotifyCanExecuteChanged();
         AddDomainCommand.NotifyCanExecuteChanged();
@@ -89,6 +92,8 @@ public partial class MainViewModel : ObservableObject
     {
         ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(StrategyReadiness));
+        ActionReadiness = "Стратегия выбрана. Нажмите «Проверить действие», чтобы обновить причину недоступности.";
+        CheckActionCommand.NotifyCanExecuteChanged();
     }
     partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
     partial void OnIsDarkChanged(bool value) => M3Theme.Apply(value);
@@ -114,6 +119,12 @@ public partial class MainViewModel : ObservableObject
             snapshot = new ServiceSnapshot(ServiceState.Unknown, null);
             Error += (Error.Length == 0 ? "" : "\n") + "Состояние службы прочитать не удалось. " + ex.Message;
         }
+        ShowObservedState(snapshot);
+    }
+
+    private void ShowObservedState(ServiceSnapshot snapshot)
+    {
+        ServiceOwnershipText = snapshot.OwnershipReason;
         StatusText = snapshot.State switch
         {
             ServiceState.Missing => "Не установлена", ServiceState.Running => "Работает",
@@ -168,14 +179,35 @@ public partial class MainViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(FileSummary));
         await ReadStatusAsync();
+        await CheckInstallReadinessAsync();
     }
     private bool CanApply() => !IsBusy && SelectedPreset != null && Allows(FlowsealAction.InstallService);
 
     [RelayCommand(CanExecute = nameof(CanApply))]
-    private Task ApplyAsync() => PerformAsync(() => throw new IOException(Unavailable(FlowsealAction.InstallService)));
+    private Task ApplyAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.InstallService));
 
     [RelayCommand(CanExecute = nameof(CanRemove))]
-    private Task RemoveAsync() => PerformAsync(() => throw new IOException(Unavailable(FlowsealAction.RemoveService)));
+    private Task RemoveAsync() => PerformAsync(() => DeniedActionAsync(FlowsealAction.RemoveService));
+
+    private bool CanCheckAction() => !IsBusy && SelectedPreset != null;
+    [RelayCommand(CanExecute = nameof(CanCheckAction))]
+    private Task CheckActionAsync() => PerformAsync(CheckInstallReadinessAsync);
+
+    private async Task CheckInstallReadinessAsync()
+    {
+        if (SelectedPreset == null) { ActionReadiness = "Сначала выберите стратегию из поставки."; return; }
+        var result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+        ShowObservedState(result.State);
+        ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
+    }
+
+    private async Task DeniedActionAsync(FlowsealAction action)
+    {
+        var result = await adapter.ExecuteAsync(new(Root, action, SelectedPreset));
+        ShowObservedState(result.State);
+        ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
+        Error = result.Explanation;
+    }
     [RelayCommand(CanExecute = nameof(CanInteract))]
     private async Task LoadHostlistAsync() => await PerformAsync(async () =>
     {
