@@ -393,15 +393,17 @@ public partial class MainViewModel : ObservableObject
             manualObservationKnown = false;
             lastManualSnapshot = null;
             ManualProcessText = "";
-            operationDetails = error.ToString();
+            manualObservationDetails = error.ToString();
             installReady = false;
             ManualStatusText = "Состояние пробного процесса неизвестно. Обновите состояние; перед новым запуском убедитесь, что прежний процесс завершён.";
-            Error = ManualStatusText;
+            SetErrorNotice(ref manualObservationNotice, ManualStatusText);
             NotifyObservedState();
             NotifyManualControls();
             return;
         }
         manualObservationKnown = true;
+        manualObservationDetails = "";
+        SetErrorNotice(ref manualObservationNotice, "");
         NotifyManualControls();
         if (ReferenceEquals(snapshot, lastManualSnapshot)) return;
         lastManualSnapshot = snapshot;
@@ -441,6 +443,8 @@ public partial class MainViewModel : ObservableObject
         var explanation = result.Explanation;
         var recovery = result.Recovery switch
         {
+            FlowsealRecoveryOutcome.NotNeeded when result.Outcome == FlowsealActionOutcome.RecoveryRequired
+                => "Восстановление ещё не выполнено. Проверьте текущее состояние и возможность восстановления перед новыми изменениями.",
             FlowsealRecoveryOutcome.Restored => "Восстановление: прежнее состояние службы возвращено.",
             FlowsealRecoveryOutcome.Failed => "Восстановление не подтверждено. Проверьте службу и сохранённую операцию перед повтором.",
             FlowsealRecoveryOutcome.Conflict => "Восстановление остановлено: обнаружено стороннее изменение. Сравните текущее состояние с сохранённым; не перезаписывайте внешние изменения.",

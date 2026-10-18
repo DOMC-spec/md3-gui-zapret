@@ -12,12 +12,16 @@ public partial class MainViewModel
     private string operationDetails = "";
     private string recoveryDetails = "";
     private string observationNotice = "";
+    private string manualObservationNotice = "";
+    private string manualObservationDetails = "";
     private bool manualObservationKnown;
 
-    private void SetObservationNotice(string notice)
+    private void SetObservationNotice(string notice) => SetErrorNotice(ref observationNotice, notice);
+
+    private void SetErrorNotice(ref string previousNotice, string notice)
     {
-        var otherErrors = observationNotice.Length == 0 ? Error : Error.Replace(observationNotice, "").Trim();
-        observationNotice = notice;
+        var otherErrors = previousNotice.Length == 0 ? Error : Error.Replace(previousNotice, "").Trim();
+        previousNotice = notice;
         Error = string.Join("\n", new[] { otherErrors, notice }.Where(text => text.Length != 0));
     }
     public string RegisteredStrategyText => observedService.State == ServiceState.Missing
@@ -29,7 +33,7 @@ public partial class MainViewModel
         : observedService.State == ServiceState.Stopped || observedService.State == ServiceState.Missing
             ? "Работающая конфигурация службы: процесс не запущен."
             : "Работающая конфигурация службы не подтверждена. Метка автозапуска не доказывает параметры запущенного процесса.";
-    public string TechnicalDetails => string.Join("\n\n", new[] { operationDetails, observationDetails, recoveryDetails,
+    public string TechnicalDetails => string.Join("\n\n", new[] { operationDetails, observationDetails, manualObservationDetails, recoveryDetails,
         observedService.Configuration?.BinaryPath,
         observedService.Process is { } process ? $"Служба: PID {process.Id}; {process.Executable ?? "путь неизвестен"}; начало UTC ticks: {process.StartedAtUtcTicks}" : null
     }.Where(text => !string.IsNullOrWhiteSpace(text)));

@@ -8,6 +8,8 @@ internal static class ActualStatePresentationChecks
     public static void Run(Action<Task> complete)
     {
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
+        CheckRecoveredManualObservation(complete, root);
+        CheckPendingRecovery(complete, root);
         var adapter = new StateAdapter(root);
         var model = new MainViewModel(adapter, root);
         try
@@ -68,6 +70,61 @@ internal static class ActualStatePresentationChecks
         Console.WriteLine("PASS GUI separate selection, registration and runtime; external refresh and failed observation");
     }
 
+    private static void CheckRecoveredManualObservation(Action<Task> complete, string root)
+    {
+        foreach (var running in new[] { false, true })
+        {
+            var adapter = new StateAdapter(root);
+            if (running) adapter.Session = new(ManualSessionState.Running, root, "trial BAT", new(77, "inert", 123));
+            var model = new MainViewModel(adapter, root);
+            try
+            {
+                complete(model.InitializeAsync());
+                if (!running)
+                {
+                    adapter.PreflightFailure = true;
+                    complete(model.CheckActionCommand.ExecuteAsync(null));
+                }
+                var actionError = model.Error;
+                adapter.FailManualRead = true;
+                complete(model.RefreshObservedStateAsync());
+                if (!model.Error.Contains("Состояние пробного процесса неизвестно")) throw new Exception("Failed manual observation must be visible");
+                adapter.FailManualRead = false;
+                complete(model.RefreshObservedStateAsync());
+                if (model.Error != actionError || model.ManualStatusText.Contains("неизвестно")
+                    || model.TechnicalDetails.Contains("native process 5")
+                    || (!running && !model.TechnicalDetails.Contains("QueryServiceConfig: 1734")))
+                    throw new Exception("Recovered idle/running observation must clear only its own error and diagnostics, preserving the action failure");
+            }
+            finally { model.Notifications.Dispose(); }
+        }
+        Console.WriteLine("PASS recovered idle/running manual observation clears its error and retains independent action failure");
+    }
+
+    private static void CheckPendingRecovery(Action<Task> complete, string root)
+    {
+        var adapter = new StateAdapter(root);
+        var model = new MainViewModel(adapter, root);
+        try
+        {
+            complete(model.InitializeAsync());
+            adapter.PendingRecovery = true;
+            complete(model.CheckActionCommand.ExecuteAsync(null));
+            if (model.ApplyCommand.CanExecute(null) || !model.HasError
+                || !model.ActionReadiness.Contains("Восстановление ещё не выполнено")
+                || !model.Error.Contains("Восстановление ещё не выполнено")
+                || model.ActionReadiness.Contains("Восстановление не требовалось")
+                || model.Error.Contains("Восстановление не требовалось"))
+                throw new Exception("Pending recovery must never be presented as unnecessary recovery");
+            adapter.PendingRecovery = false;
+            complete(model.CheckActionCommand.ExecuteAsync(null));
+            if (model.HasError || !model.ActionReadiness.Contains("Восстановление не требовалось"))
+                throw new Exception("A ready action without pending recovery must retain the no-recovery-needed result");
+        }
+        finally { model.Notifications.Dispose(); }
+        Console.WriteLine("PASS pending recovery is not labelled unnecessary; ready no-recovery outcome is preserved");
+    }
+
     private sealed class StateAdapter(string root) : IFlowsealAdapter
     {
         public ServiceSnapshot State = new(ServiceState.Running, "external BAT", new("inert"),
@@ -75,6 +132,7 @@ internal static class ActualStatePresentationChecks
         public bool FailRead;
         public bool FailManualRead;
         public bool PreflightFailure;
+        public bool PendingRecovery;
         public TaskCompletionSource<ServiceSnapshot>? HeldRead;
         public ManualSessionSnapshot Session = new();
         public Task<DistributionDescription> DescribeAsync(string path)
@@ -92,7 +150,9 @@ internal static class ActualStatePresentationChecks
             if (HeldRead is { } held) { HeldRead = null; return held.Task; }
             return FailRead ? Task.FromException<ServiceSnapshot>(new IOException("native read 5")) : Task.FromResult(State);
         }
-        public Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request) => Task.FromResult(PreflightFailure
+        public Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request) => Task.FromResult(PendingRecovery
+            ? new FlowsealActionResult(FlowsealActionOutcome.RecoveryRequired, State, "Обнаружена незавершённая операция. Сначала восстановите прежнее состояние.")
+            : PreflightFailure
             ? new FlowsealActionResult(FlowsealActionOutcome.RecoveryRequired, State, "Снимок восстановления прочитать не удалось. Проверьте права доступа.", ApplyError: "QueryServiceConfig: 1734")
             : new FlowsealActionResult(FlowsealActionOutcome.Ready, State, "Готово"));
         public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request)
