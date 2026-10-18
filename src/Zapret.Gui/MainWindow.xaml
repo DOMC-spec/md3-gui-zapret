@@ -7,7 +7,7 @@
  WindowStartupLocation="CenterScreen" Style="{StaticResource MaterialDesignWindow}"
  FontFamily="{StaticResource M3.Font}" FontSize="14"
  Background="{DynamicResource M3.Surface}" Foreground="{DynamicResource M3.OnSurface}"
- Loaded="OnLoaded" Closing="OnClosing" UseLayoutRounding="True">
+ Loaded="OnLoaded" Activated="OnActivated" Closing="OnClosing" UseLayoutRounding="True">
  <Window.Resources>
   <Style x:Key="StatusIcon" TargetType="md:PackIcon">
    <Setter Property="Kind" Value="ShieldOutline"/>
@@ -95,10 +95,17 @@
           <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
           <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
          </StackPanel>
-         <TextBlock Text="{Binding ActivePreset}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding SelectedStrategyText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding RegisteredStrategyText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+         <TextBlock Text="{Binding RunningConfigurationText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+         <TextBlock Text="Работа службы и процесса не подтверждает доступность видео или голоса." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="{Binding AutostartText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="{Binding ServiceOwnershipText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="{Binding ActionReadiness}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+         <ProgressBar IsIndeterminate="True" Height="4" Margin="0,12,0,0" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" AutomationProperties.Name="Выполняется действие, дождитесь результата"/>
+         <Expander Header="Технические подробности" Margin="0,8,0,0">
+          <TextBox Text="{Binding TechnicalDetails, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Технические подробности состояния и последнего действия"/>
+         </Expander>
         </StackPanel>
         <Button Grid.Column="1" Style="{StaticResource M3.IconButton}" VerticalAlignment="Top"
          Command="{Binding RefreshCommand}" ToolTip="Обновить статус, стратегии и списки" AutomationProperties.Name="Обновить статус и список стратегий">

@@ -72,7 +72,7 @@ public partial class MainViewModel : ObservableObject
     private bool Allows(FlowsealAction action) => Distribution?.Capabilities.Any(c => c.Action == action && c.Available) == true;
     private string Unavailable(FlowsealAction action) => Distribution?.Capabilities.FirstOrDefault(c => c.Action == action)?.Reason ?? "Сначала выберите поставку Flowseal.";
     public bool CanEditLists => !IsBusy && !HasManualSession && !HasInterruptedOperation && Allows(FlowsealAction.EditLists);
-    private bool CanControlService(FlowsealAction action) => !IsBusy && !HasManualSession && !HasInterruptedOperation && Allows(action)
+    private bool CanControlService(FlowsealAction action) => !IsBusy && manualObservationKnown && !HasManualSession && !HasInterruptedOperation && Allows(action)
         && serviceOwnership == ServiceOwnership.Owned && CurrentState is ServiceState.Running or ServiceState.Stopped;
     private bool CanRemove() => CanControlService(FlowsealAction.RemoveService);
     private bool CanStartService() => CanControlService(FlowsealAction.StartService) && CurrentState == ServiceState.Stopped;
@@ -85,7 +85,7 @@ public partial class MainViewModel : ObservableObject
     }
     public bool CanInteract => !IsBusy;
     public bool CanChooseDistribution => !IsBusy && !HasManualSession;
-    private bool CanStartManual() => !IsBusy && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && Allows(FlowsealAction.ManualStart);
+    private bool CanStartManual() => !IsBusy && manualObservationKnown && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && Allows(FlowsealAction.ManualStart);
     private bool CanStopManual() => !IsBusy && HasManualSession;
     private void NotifyManualControls()
     {
@@ -139,6 +139,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnSelectedPresetChanged(Preset? value)
     {
+        OnPropertyChanged(nameof(SelectedStrategyText));
         if (!IsBusy) _ = RefreshDomainListsAsync();
         installReady = false;
         ApplyCommand.NotifyCanExecuteChanged();
@@ -156,30 +157,41 @@ public partial class MainViewModel : ObservableObject
 
     public async Task InitializeAsync() => await RefreshAsync();
 
-    private async Task PerformAsync(Func<Task> action)
+    private async Task PerformAsync(Func<Task> action, bool clearError = true)
     {
         if (IsBusy) return;
         IsBusy = true;
-        Error = "";
+        if (clearError) Error = "";
         try { await action(); }
         catch (Exception ex) { Error = ex.Message; }
-        finally { IsBusy = false; }
+        finally
+        {
+            IsBusy = false;
+            if (refreshPending) { refreshPending = false; await RefreshObservedStateAsync(); }
+        }
     }
 
     private async Task ReadStatusAsync()
     {
+        SetObservationNotice("");
         ServiceSnapshot snapshot;
         try { snapshot = await adapter.ReadStateAsync(Root); }
         catch (Exception ex)
         {
             snapshot = new ServiceSnapshot(ServiceState.Unknown, null);
-            Error += (Error.Length == 0 ? "" : "\n") + "Состояние службы прочитать не удалось. " + ex.Message;
+            observationDetails = ex.ToString();
+            SetObservationNotice("Состояние службы прочитать не удалось. Проверьте права доступа и нажмите «Обновить».");
         }
         ShowObservedState(snapshot);
     }
 
     private void ShowObservedState(ServiceSnapshot snapshot)
     {
+        if (snapshot != observedService) installReady = false;
+        observedService = snapshot;
+        if (snapshot.State != ServiceState.Unknown) observationDetails = snapshot.ObservationError ?? "";
+        if (snapshot.ObservationError != null)
+            SetObservationNotice("Часть сведений о службе прочитать не удалось. Проверьте права доступа и обновите состояние; изменение службы может быть недоступно.");
         serviceOwnership = snapshot.Ownership;
         AutostartText = snapshot.State == ServiceState.Missing ? "Автозапуск не установлен." : snapshot.Configuration?.StartType switch
         {
@@ -198,6 +210,7 @@ public partial class MainViewModel : ObservableObject
         CurrentState = snapshot.State;
         NotifyServiceControls();
         ActivePreset = snapshot.Preset ?? (snapshot.State == ServiceState.Missing ? "Стратегия ещё не применена" : "Стратегия не указана");
+        NotifyObservedState();
     }
 
     [RelayCommand(CanExecute = nameof(CanInteract))]
@@ -251,9 +264,9 @@ public partial class MainViewModel : ObservableObject
         await ReadStatusAsync();
         await PollManualSessionAsync();
         await ReadInterruptedOperationAsync();
-        if (!HasManualSession && !HasInterruptedOperation) await CheckInstallReadinessAsync();
+        if (!HasManualSession && !HasInterruptedOperation && CurrentState != ServiceState.Unknown) await CheckInstallReadinessAsync();
     }
-    private bool CanApply() => !IsBusy && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && installReady;
+    private bool CanApply() => !IsBusy && manualObservationKnown && !HasManualSession && !HasInterruptedOperation && SelectedPreset != null && installReady;
 
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
@@ -263,10 +276,8 @@ public partial class MainViewModel : ObservableObject
         {
             installReady = false;
             ActionReadiness = "Замена автозапуска… При ошибке оболочка попытается вернуть прежнюю службу. Дождитесь результата.";
-            var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
-            ShowActionResult(result);
-            await ReadInterruptedOperationAsync();
-            succeeded = result.Outcome == FlowsealActionOutcome.Success;
+            var result = await ExecuteObservedActionAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+            succeeded = result?.Outcome == FlowsealActionOutcome.Success && CurrentState != ServiceState.Unknown && !HasInterruptedOperation;
             if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
         });
         if (succeeded && CloseAfterApply && !HasUnsavedChanges) CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -289,6 +300,8 @@ public partial class MainViewModel : ObservableObject
     {
         installReady = false;
         if (SelectedPreset == null) { ActionReadiness = "Сначала выберите стратегию из поставки."; return; }
+        await ReadStatusAsync();
+        if (CurrentState == ServiceState.Unknown) { ActionReadiness = "Состояние службы неизвестно. Обновите состояние перед проверкой действия."; return; }
         var result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
         installReady = result.Outcome == FlowsealActionOutcome.Ready;
         ApplyCommand.NotifyCanExecuteChanged();
@@ -301,12 +314,10 @@ public partial class MainViewModel : ObservableObject
         installReady = false;
         ApplyCommand.NotifyCanExecuteChanged();
         ActionReadiness = ActionName(action) + "… Дождитесь подтверждения состояния Windows.";
-        var result = await adapter.ExecuteAsync(new(Root, action));
-        ShowActionResult(result);
-        await ReadInterruptedOperationAsync();
+        await ExecuteObservedActionAsync(new(Root, action));
     }
 
-    private bool CanRecoverInterrupted() => !IsBusy && !HasManualSession && HasInterruptedOperation && interruptedOperation.CanRecover;
+    private bool CanRecoverInterrupted() => !IsBusy && manualObservationKnown && !HasManualSession && HasInterruptedOperation && interruptedOperation.CanRecover;
     private bool CanOpenRecoveryDistribution() => !IsBusy && !HasManualSession && HasInterruptedOperation
         && interruptedOperation.Root != null && !Path.GetFullPath(Root).TrimEnd(Path.DirectorySeparatorChar)
             .Equals(Path.GetFullPath(interruptedOperation.Root).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
@@ -315,7 +326,11 @@ public partial class MainViewModel : ObservableObject
     {
         try { interruptedOperation = await adapter.ReadInterruptedOperationAsync(Root); }
         catch (Exception error)
-        { interruptedOperation = new(true, false, Explanation: "Журнал восстановления прочитать не удалось. Изменения заблокированы: " + error.Message); }
+        {
+            recoveryDetails = error.ToString();
+            interruptedOperation = new(true, false, Explanation: "Журнал восстановления прочитать не удалось. Изменения заблокированы. Проверьте права доступа и обновите состояние.");
+            NotifyObservedState();
+        }
         HasInterruptedOperation = interruptedOperation.Pending;
         InterruptedOperationText = interruptedOperation.Explanation;
         if (HasInterruptedOperation) installReady = false;
@@ -327,9 +342,7 @@ public partial class MainViewModel : ObservableObject
     {
         installReady = false;
         ActionReadiness = "Проверка сохранённой операции и возврат прежнего состояния…";
-        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.RecoverInterrupted));
-        ShowActionResult(result);
-        await ReadInterruptedOperationAsync();
+        await ExecuteObservedActionAsync(new(Root, FlowsealAction.RecoverInterrupted));
     });
 
     [RelayCommand(CanExecute = nameof(CanOpenRecoveryDistribution))]
@@ -340,31 +353,47 @@ public partial class MainViewModel : ObservableObject
     {
         installReady = false;
         ActionReadiness = "Подготовка пробного сеанса… Дождитесь наблюдения собственного winws.";
-        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStart, SelectedPreset));
-        ShowActionResult(result);
+        await ExecuteObservedActionAsync(new(Root, FlowsealAction.ManualStart, SelectedPreset));
         await PollManualSessionAsync();
     });
 
     [RelayCommand(CanExecute = nameof(CanStopManual))]
     private Task StopManualAsync() => PerformAsync(async () =>
     {
-        var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStop));
-        ShowActionResult(result);
+        ActionReadiness = "Завершение пробного сеанса и возврат службы… Дождитесь результата.";
+        await ExecuteObservedActionAsync(new(Root, FlowsealAction.ManualStop));
         await PollManualSessionAsync();
     });
 
     public async Task PollManualSessionAsync()
     {
-        var snapshot = await adapter.ReadManualSessionAsync();
+        ManualSessionSnapshot snapshot;
+        try { snapshot = await adapter.ReadManualSessionAsync(); }
+        catch (Exception error)
+        {
+            manualObservationKnown = false;
+            lastManualSnapshot = null;
+            operationDetails = error.ToString();
+            installReady = false;
+            ManualStatusText = "Состояние пробного процесса неизвестно. Обновите состояние; перед новым запуском убедитесь, что прежний процесс завершён.";
+            Error = ManualStatusText;
+            NotifyObservedState();
+            NotifyManualControls();
+            return;
+        }
+        manualObservationKnown = true;
+        NotifyManualControls();
         if (ReferenceEquals(snapshot, lastManualSnapshot)) return;
         lastManualSnapshot = snapshot;
         HasManualSession = snapshot.IsActive;
         ManualStatusText = snapshot.Explanation;
         ManualProcessText = snapshot.Process is { } process
-            ? $"{snapshot.Strategy} · PID {process.Id} · создан {new DateTime(process.StartedAtUtcTicks!.Value, DateTimeKind.Utc).ToLocalTime():G}\n{process.Executable}" : "";
+            ? $"{snapshot.Strategy} · PID {process.Id} · начало: {(process.StartedAtUtcTicks is { } ticks ? new DateTime(ticks, DateTimeKind.Utc).ToLocalTime().ToString("G") : "неизвестно")}\n{process.Executable}" : "";
+        NotifyObservedState();
         if (snapshot.Result != null)
         {
             ShowActionResult(snapshot.Result);
+            await ReadStatusAsync();
             await ReadInterruptedOperationAsync();
         }
     }
@@ -377,10 +406,9 @@ public partial class MainViewModel : ObservableObject
         var canClose = false;
         await PerformAsync(async () =>
         {
-            var result = await adapter.ExecuteAsync(new(Root, FlowsealAction.ManualStop));
-            ShowActionResult(result);
+            var result = await ExecuteObservedActionAsync(new(Root, FlowsealAction.ManualStop));
             await PollManualSessionAsync();
-            canClose = result.Outcome == FlowsealActionOutcome.Success;
+            canClose = result?.Outcome == FlowsealActionOutcome.Success && !HasManualSession;
         });
         return canClose;
     }
@@ -388,11 +416,24 @@ public partial class MainViewModel : ObservableObject
     private void ShowActionResult(FlowsealActionResult result)
     {
         ShowObservedState(result.State);
-        ActionReadiness = string.Join("\n\n", new[] { result.Explanation,
-            result.RecoveryExplanation, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)));
+        operationDetails = string.Join("\n\n", new[] { result.Outcome.ToString(), result.Explanation, result.ApplyError,
+            result.RecoveryExplanation, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
+        var explanation = string.IsNullOrWhiteSpace(result.ApplyError) ? result.Explanation
+            : result.Explanation.Replace(result.ApplyError, "Технические подробности доступны ниже.");
+        var recovery = result.Recovery switch
+        {
+            FlowsealRecoveryOutcome.Restored => "Восстановление: прежнее состояние службы возвращено.",
+            FlowsealRecoveryOutcome.Failed => "Восстановление не подтверждено. Проверьте службу и сохранённую операцию перед повтором.",
+            FlowsealRecoveryOutcome.Conflict => "Восстановление остановлено: обнаружено стороннее изменение. Сравните текущее состояние с сохранённым; не перезаписывайте внешние изменения.",
+            _ => "Восстановление не требовалось."
+        };
+        ActionReadiness = string.Join("\n\n", new[] { explanation, recovery,
+            result.NextStep ?? (result.Outcome == FlowsealActionOutcome.Success
+                ? "Проверьте нужные функции сервисов: работа службы не подтверждает доступность видео или голоса."
+                : "Обновите состояние, проверьте поставку и права доступа перед повторной попыткой.") });
         Error = result.Outcome == FlowsealActionOutcome.Success ? "" : string.Join("\n\n",
-            new[] { result.ApplyError, result.Explanation, result.RecoveryExplanation, result.NextStep }
-                .Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
+            new[] { explanation, recovery, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)));
+        NotifyObservedState();
     }
 
 }

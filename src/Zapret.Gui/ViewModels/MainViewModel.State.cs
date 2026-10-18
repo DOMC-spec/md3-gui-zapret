@@ -1,0 +1,74 @@
+using Zapret.Gui.Services;
+
+namespace Zapret.Gui.ViewModels;
+
+public partial class MainViewModel
+{
+    private ServiceSnapshot observedService = new(ServiceState.Unknown, null);
+    private bool refreshPending;
+    private string observationDetails = "";
+    private string operationDetails = "";
+    private string recoveryDetails = "";
+    private string observationNotice = "";
+    private bool manualObservationKnown;
+
+    private void SetObservationNotice(string notice)
+    {
+        if (observationNotice.Length != 0) Error = Error.Replace(observationNotice, "").Trim();
+        observationNotice = notice;
+        if (notice.Length != 0) Error = string.Join("\n", new[] { Error, notice }.Where(text => text.Length != 0));
+    }
+    public string RegisteredStrategyText => observedService.State == ServiceState.Missing
+        ? "Автозапуск: не установлен" : "Автозапуск: " + (observedService.Preset ?? "стратегия неизвестна");
+    public string SelectedStrategyText => "Для следующего запуска: " + (SelectedPreset?.Name ?? "не выбрана");
+    public string RunningConfigurationText => lastManualSnapshot is { State: ManualSessionState.Running, Process.Executable: not null, Process.StartedAtUtcTicks: not null } manual
+        ? $"Подтверждённый пробный процесс: {manual.Strategy} · PID {manual.Process.Id}"
+        : observedService.State == ServiceState.Stopped || observedService.State == ServiceState.Missing
+            ? "Работающая конфигурация службы: процесс не запущен."
+            : "Работающая конфигурация службы не подтверждена. Метка автозапуска не доказывает параметры запущенного процесса.";
+    public string TechnicalDetails => string.Join("\n\n", new[] { operationDetails, observationDetails, recoveryDetails,
+        observedService.Configuration?.BinaryPath,
+        observedService.Process is { } process ? $"Служба: PID {process.Id}; {process.Executable ?? "путь неизвестен"}; начало UTC ticks: {process.StartedAtUtcTicks}" : null
+    }.Where(text => !string.IsNullOrWhiteSpace(text)));
+    private void NotifyObservedState()
+    {
+        OnPropertyChanged(nameof(RegisteredStrategyText));
+        OnPropertyChanged(nameof(RunningConfigurationText));
+        OnPropertyChanged(nameof(TechnicalDetails));
+    }
+
+    public Task RefreshObservedStateAsync()
+    {
+        if (IsBusy) { refreshPending = true; return Task.CompletedTask; }
+        return PerformAsync(async () =>
+        {
+            await ReadStatusAsync();
+            await PollManualSessionAsync();
+            await ReadInterruptedOperationAsync();
+        }, clearError: false);
+    }
+
+    private async Task<FlowsealActionResult?> ExecuteObservedActionAsync(FlowsealActionRequest request)
+    {
+        try
+        {
+            // The adapter repeats observation under its guard immediately before mutation.
+            var result = await adapter.ExecuteAsync(request);
+            ShowActionResult(result);
+            return result;
+        }
+        catch (Exception error)
+        {
+            operationDetails = error.ToString();
+            Error = "Действие не удалось завершить. Проверьте текущее состояние и журнал восстановления перед повторной попыткой.";
+            ActionReadiness = Error;
+            return null;
+        }
+        finally
+        {
+            await ReadStatusAsync();
+            await ReadInterruptedOperationAsync();
+            NotifyObservedState();
+        }
+    }
+}

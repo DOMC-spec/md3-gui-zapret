@@ -20,6 +20,12 @@ internal static class Program
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
+            if (args.Contains("--actual-state-only"))
+            {
+                ActualStatePresentationChecks.Run(Complete);
+                app.Dispatcher.InvokeShutdown();
+                return 0;
+            }
             if (args.Contains("--domain-lists-only"))
             {
                 DomainListPresentationChecks.Run(Complete);
@@ -43,6 +49,7 @@ internal static class Program
             CheckDistributionSelection();
             CheckFolderChangeResetsEditor();
             CheckServiceSafetyPresentation();
+            ActualStatePresentationChecks.Run(Complete);
             ServiceRecoveryPresentationChecks.Run(Complete);
             ServiceControlPresentationChecks.Run(Complete);
             ManualPresentationChecks.Run(Complete);

@@ -64,7 +64,7 @@ internal static class ManualPresentationChecks
             return Task.FromResult(description with { Capabilities = description.Capabilities.Select(c =>
                 c.Action == FlowsealAction.ManualStart ? c with { Available = true } : c).ToArray() });
         }
-        public Task<ServiceSnapshot> ReadStateAsync(string path) => Task.FromResult(new ServiceSnapshot(ServiceState.Running, "original",
+        public Task<ServiceSnapshot> ReadStateAsync(string path) => Task.FromResult(new ServiceSnapshot(Session.IsActive || (FailStop && Session.State == ManualSessionState.Finished) ? ServiceState.Stopped : ServiceState.Running, "original",
             new("inert"), Ownership: ServiceOwnership.Owned));
         public Task<ManualSessionSnapshot> ReadManualSessionAsync() => Task.FromResult(Session);
         public Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request) => Task.FromResult(new FlowsealActionResult(

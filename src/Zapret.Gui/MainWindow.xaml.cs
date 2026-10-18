@@ -8,8 +8,9 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new();
     private MainViewModel Model => (MainViewModel)DataContext;
-    private readonly System.Windows.Threading.DispatcherTimer manualTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly System.Windows.Threading.DispatcherTimer manualTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private bool pollingManual;
+    private bool initialized;
     public MainWindow()
     {
         InitializeComponent();
@@ -19,7 +20,7 @@ public partial class MainWindow : Window
         {
             if (pollingManual || Model.IsBusy) return;
             pollingManual = true;
-            try { await Model.PollManualSessionAsync(); }
+            try { await Model.RefreshObservedStateAsync(); }
             catch (Exception error) { Model.Error = "Не удалось обновить пробный сеанс: " + error.Message; }
             finally { pollingManual = false; }
         };
@@ -28,7 +29,12 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         await Model.InitializeAsync();
+        initialized = true;
         manualTimer.Start();
+    }
+    private async void OnActivated(object? sender, EventArgs e)
+    {
+        if (initialized) await Model.RefreshObservedStateAsync();
     }
     private async void OnChooseDistribution(object sender, RoutedEventArgs e)
     {

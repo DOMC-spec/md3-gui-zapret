@@ -23,7 +23,8 @@ internal static class ServiceRecoveryPresentationChecks
                 complete(model.ApplyCommand.ExecuteAsync(null));
                 Check(adapter.Executions == 1 && model.ActivePreset == "previous strategy" && model.StatusText == "Остановлена",
                     "GUI must present the observed result, including the previous strategy after recovery");
-                Check(model.Error.Contains("Ошибка запуска") && model.ActionReadiness.Contains("Восстановление: " + recovery)
+                Check(model.TechnicalDetails.Contains("Ошибка запуска") && model.TechnicalDetails.Contains("Восстановление: " + recovery)
+                    && !model.Error.Contains("Ошибка запуска")
                     && model.ActionReadiness.Contains("Повторите", StringComparison.OrdinalIgnoreCase),
                     "Application error, recovery result and next step must remain visible together");
                 Check(closes == 0 && !model.ApplyCommand.CanExecute(null), "Failure must keep the window open and require a new preflight");
@@ -60,7 +61,7 @@ internal static class ServiceRecoveryPresentationChecks
         public int Executions { get; private set; }
         public Task<DistributionDescription> DescribeAsync(string selectedRoot) =>
             Task.FromResult(new FlowsealDistributionAdapter().Describe(root));
-        public Task<ServiceSnapshot> ReadStateAsync(string selectedRoot) => Task.FromResult(new ServiceSnapshot(ServiceState.Stopped, "previous strategy"));
+        public Task<ServiceSnapshot> ReadStateAsync(string selectedRoot) => Task.FromResult(Executions == 0 ? new ServiceSnapshot(ServiceState.Stopped, "previous strategy") : result.State);
         public Task<FlowsealActionResult> PreflightAsync(FlowsealActionRequest request) =>
             Task.FromResult(new FlowsealActionResult(FlowsealActionOutcome.Ready, new(ServiceState.Stopped, "previous strategy"), "Готово к замене."));
         public Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request)
