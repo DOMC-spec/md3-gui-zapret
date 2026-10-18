@@ -39,6 +39,7 @@ try {
     $exe = Join-Path $package 'Zapret.Configurator.exe'
     if (!(Test-Path -LiteralPath $exe)) { throw 'Publish did not produce Zapret.Configurator.exe.' }
     Copy-Item -LiteralPath 'README.md', 'LICENSE', 'docs/release/flowseal-1.10.3-acceptance.md' -Destination $package
+    Copy-Item -LiteralPath 'docs/release/v0.2.0-alpha.1.md' -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath 'src/Zapret.Core/Compatibility/flowseal-1.10.3.json' -Destination $package
     $reference = Get-Content 'src/Zapret.Core/Compatibility/flowseal-1.10.3.json' -Raw | ConvertFrom-Json
     [ordered]@{
