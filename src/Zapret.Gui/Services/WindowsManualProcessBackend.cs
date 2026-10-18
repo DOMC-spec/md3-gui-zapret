@@ -94,7 +94,14 @@ public sealed class WindowsManualProcessBackend : IManualProcessBackend
                     if (WaitForSingleObject(handle, 0) == 0) continue;
                     if (!IsProcessInJob(handle, job, out var belongs) || !belongs)
                         throw new IOException("Процесс покинул собственный job; принадлежность не подтверждена.");
-                    var found = Identity(handle, id);
+                    ServiceProcess found;
+                    try { found = Identity(handle, id); }
+                    catch (Win32Exception) when (WaitForSingleObject(handle, 250) == 0)
+                    {
+                        // A helper can lose its image information before its process handle signals exit.
+                        // Skip only a confirmed exit; a live process with unreadable identity still fails closed.
+                        continue;
+                    }
                     if (!string.Equals(Path.GetFileName(found.Executable), "winws.exe", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!found.Executable!.Equals(executable, StringComparison.OrdinalIgnoreCase) || identity != null)
                         throw new IOException("В собственном job обнаружен неожиданный winws.");

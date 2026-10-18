@@ -60,6 +60,11 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--native-observation-only"))
+    {
+        await ManualSessionScenarios.RunNativeObservation(root);
+        return;
+    }
     if (args.Contains("--actual-state-only"))
     {
         await ActualStateScenarios.Run(root);

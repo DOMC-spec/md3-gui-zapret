@@ -128,7 +128,9 @@ static class ManualSessionScenarios
         await RunNative(root);
     }
 
-    private static async Task RunNative(string sourceRoot)
+    public static Task RunNativeObservation(string sourceRoot) => RunNative(sourceRoot, true);
+
+    private static async Task RunNative(string sourceRoot, bool observationOnly = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "Zapret manual " + Guid.NewGuid().ToString("N")[..8]);
         try
@@ -148,6 +150,8 @@ static class ManualSessionScenarios
             File.Copy(Environment.ProcessPath!, Path.Combine(root, "sc.exe"));
             File.Copy(Environment.ProcessPath!, Path.Combine(root, "netsh.exe"));
             File.Copy(Environment.ProcessPath!, Path.Combine(root, "bin", "winws.exe"), true);
+            CheckShortLivedHelpers(root);
+            if (observationOnly) return;
             var inherited = Environment.GetEnvironmentVariable("NO_UPDATE_CHECK");
             foreach (var name in new[] { "general (ALT5)", "general (FAKE TLS AUTO)" })
             {
@@ -200,6 +204,33 @@ static class ManualSessionScenarios
     {
         public void EnsureNoOtherWinws(ServiceProcess? serviceProcess) { } // Existing workstation processes are outside the fixture job.
         public IManualProcessSession Launch(string root, string path) => new WindowsManualProcessBackend().Launch(root, path);
+    }
+
+    private static void CheckShortLivedHelpers(string root)
+    {
+        var script = Path.Combine(root, "short-helpers.bat");
+        File.WriteAllText(script, "@echo off\r\nfor /l %%i in (1,1,20) do start \"\" /b \"%~dp0sc.exe\" >nul\r\nstart \"\" /b \"%~dp0bin\\winws.exe\" >nul\r\n");
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            using var session = new WindowsManualProcessBackend().Launch(root, script);
+            var deadline = Environment.TickCount64 + 10000;
+            ManualProcessObservation observed;
+            do
+            {
+                observed = session.Observe();
+                if (observed.Exited || Environment.TickCount64 >= deadline)
+                    throw new Exception("Short helper exits must not prevent observing the live fixture winws");
+            } while (observed.Process == null || !observed.LauncherExited);
+            if (observed.Process.Executable != Path.Combine(root, "bin", "winws.exe") || observed.Process.StartedAtUtcTicks == null)
+                throw new Exception("Live fixture winws identity must remain proven while helpers exit");
+            // Let the short processes fully leave between launches, matching the original BAT lifetime.
+            var stableUntil = Environment.TickCount64 + 2000;
+            while (Environment.TickCount64 < stableUntil)
+                if (session.Observe().Process != observed.Process) throw new Exception("Live fixture identity changed");
+            session.Stop();
+            if (!session.Observe().Exited) throw new Exception("Fixture job exit must be confirmed after stop");
+        }
+        Console.WriteLine("PASS native job observes identified winws across short helper exits and confirms cleanup (12 runs)");
     }
 }
 
