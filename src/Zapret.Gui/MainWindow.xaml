@@ -100,10 +100,11 @@
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
         <StackPanel>
          <TextBlock Text="Служба zapret" Style="{StaticResource M3.Label}"/>
-         <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
+         <Grid Margin="0,10,0,8">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-          <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
-         </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
+         </Grid>
          <TextBlock Text="{Binding RegisteredStrategyText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,4,0,0"/>
          <TextBlock Text="{Binding RunningConfigurationText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <TextBlock Text="Работа службы не подтверждает доступность видео или голоса." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
@@ -269,10 +270,12 @@
 
   <StackPanel Grid.Row="2" Margin="0,8,0,0" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}">
    <TextBlock Text="Выполняется действие. Дождитесь результата…" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+   <Border Height="4" Margin="0,8,0,0" CornerRadius="2" Background="{DynamicResource M3.Primary}"
+    Visibility="{Binding ReduceMotion, Converter={StaticResource BoolVisibility}}"/>
    <ProgressBar Height="4" Margin="0,8,0,0" Foreground="{DynamicResource M3.Primary}" Background="{DynamicResource M3.SecondaryContainer}" Value="100">
     <ProgressBar.Style><Style TargetType="ProgressBar" BasedOn="{StaticResource MaterialDesignLinearProgressBar}">
      <Setter Property="IsIndeterminate" Value="True"/>
-     <Style.Triggers><DataTrigger Binding="{Binding ReduceMotion}" Value="True"><Setter Property="IsIndeterminate" Value="False"/></DataTrigger></Style.Triggers>
+     <Style.Triggers><DataTrigger Binding="{Binding ReduceMotion}" Value="True"><Setter Property="IsIndeterminate" Value="False"/><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
     </Style></ProgressBar.Style>
    </ProgressBar>
   </StackPanel>

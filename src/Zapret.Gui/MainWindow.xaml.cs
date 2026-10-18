@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private bool refreshingObservedState;
     private bool initialized;
     private string lastPresentedError = "";
+    private long lastPresentedAction = -1;
     public MainWindow()
     {
         InitializeComponent();
@@ -43,8 +44,10 @@ public partial class MainWindow : Window
     private void OnErrorVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => PresentError((TextBox)sender);
     private void PresentError(TextBox text)
     {
-        if (!text.IsVisible || text.Text.Length == 0 || text.Text == lastPresentedError) return;
+        if (!text.IsVisible || text.Text.Length == 0
+            || (text.Text == lastPresentedError && Model.ActionSequence == lastPresentedAction)) return;
         lastPresentedError = text.Text;
+        lastPresentedAction = Model.ActionSequence;
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
             if (!text.IsVisible) return;

@@ -18,7 +18,7 @@ internal static class ExpressivePresentationChecks
     {
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
         var adapter = new PresentationAdapter(root);
-        var model = new MainViewModel(adapter, root);
+        var model = new MainViewModel(adapter, root) { CloseAfterApply = false };
         var window = new MainWindow { DataContext = model };
         var shutdownMode = Application.Current.ShutdownMode;
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -36,6 +36,14 @@ internal static class ExpressivePresentationChecks
             var removeBounds = new Rect(remove.TranslatePoint(new Point(), content), remove.RenderSize);
             if (applyBounds.IntersectsWith(removeBounds) || applyBounds.Right > content.ActualWidth + 1 || removeBounds.Right > content.ActualWidth + 1)
                 throw new Exception("At 200% scale, service actions must fit without overlap or horizontal clipping");
+            adapter.State = adapter.State with { State = ServiceState.Stopping };
+            complete(model.RefreshObservedStateAsync());
+            content.UpdateLayout();
+            var headline = Descendants<TextBlock>(content).Single(text => text.Text == "Останавливается…");
+            var refresh = Descendants<Button>(content).Single(button => ReferenceEquals(button.Command, model.RefreshCommand));
+            if (headline.TranslatePoint(new Point(headline.ActualWidth, 0), content).X > refresh.TranslatePoint(new Point(), content).X)
+                throw new Exception("Long transitional state must wrap before the refresh button at 200% scale");
+            adapter.State = adapter.State with { State = ServiceState.Stopped };
             content.LayoutTransform = Transform.Identity;
             model.ReduceMotion = true;
             window.Show();
@@ -69,9 +77,35 @@ internal static class ExpressivePresentationChecks
             if (!model.IsBusy || progress.IsIndeterminate) throw new Exception("Reduced motion must show static progress while retaining operation state");
             adapter.PendingAction.SetResult(new(FlowsealActionOutcome.Success, adapter.State, "Автозапуск установлен."));
             complete(applying);
+            adapter.PendingAction = null;
+            adapter.Conflict = true;
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                complete(model.CheckActionCommand.ExecuteAsync(null));
+                var viewer = Descendants<ScrollViewer>(content).First();
+                viewer.ScrollToBottom();
+                content.UpdateLayout();
+                complete(model.ApplyCommand.ExecuteAsync(null));
+                complete(Task.Delay(50));
+                var error = Descendants<TextBox>(content).Single(box => System.Windows.Automation.AutomationProperties.GetName(box) == "Ошибка и следующий шаг");
+                var errorBottom = error.TranslatePoint(new Point(0, error.ActualHeight), viewer).Y;
+                if (errorBottom < 0 || errorBottom > viewer.ActualHeight + 1)
+                    throw new Exception("Each failed user attempt must bring its error into view, including identical repeated errors");
+            }
+            adapter.State = adapter.State with { ObservationError = "native observation details" };
+            complete(model.RefreshObservedStateAsync());
+            complete(Task.Delay(50));
+            var scroller = Descendants<ScrollViewer>(content).First();
+            scroller.ScrollToBottom();
+            content.UpdateLayout();
+            var offset = scroller.VerticalOffset;
+            complete(model.RefreshObservedStateAsync());
+            complete(Task.Delay(50));
+            if (Math.Abs(scroller.VerticalOffset - offset) > 1)
+                throw new Exception("Unchanged background read errors must not repeatedly scroll away from user input");
         }
         finally { window.Close(); Application.Current.ShutdownMode = shutdownMode; }
-        Console.WriteLine("PASS expressive layout fits service actions at minimum width and 200% scale");
+        Console.WriteLine("PASS expressive 200% layout, keyboard focus/navigation, reduced motion, repeated errors and non-disruptive observation");
     }
 
     public static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
@@ -86,7 +120,7 @@ internal static class ExpressivePresentationChecks
 
     private sealed class PresentationAdapter(string root) : IFlowsealAdapter
     {
-        public ServiceSnapshot State { get; } = new(ServiceState.Stopped, "general (ALT) · зарегистрированная стратегия",
+        public ServiceSnapshot State { get; set; } = new(ServiceState.Stopped, "general (ALT) · зарегистрированная стратегия",
             new("inert"), Ownership: ServiceOwnership.Owned, OwnershipReason: "Своя служба выбранной поставки.");
         public TaskCompletionSource<ServiceSnapshot>? HeldRead;
         public TaskCompletionSource<FlowsealActionResult>? PendingAction;

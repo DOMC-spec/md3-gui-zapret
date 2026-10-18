@@ -13,6 +13,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly IFlowsealAdapter adapter;
     private bool installReady;
+    internal long ActionSequence { get; private set; }
     public event EventHandler? CloseRequested;
     public MainViewModel() : this(new FlowsealAdapter(new ProcessRunner()), AppContext.BaseDirectory) { }
     public MainViewModel(IFlowsealAdapter adapter, string applicationDirectory)
@@ -158,11 +159,12 @@ public partial class MainViewModel : ObservableObject
 
     public async Task InitializeAsync() => await RefreshAsync();
 
-    private async Task PerformAsync(Func<Task> action, bool clearError = true)
+    private async Task PerformAsync(Func<Task> action)
     {
         if (IsBusy) return;
         IsBusy = true;
-        if (clearError) Error = "";
+        ActionSequence++;
+        Error = "";
         try
         {
             if (observedRefresh != null) await observedRefresh;
@@ -178,15 +180,17 @@ public partial class MainViewModel : ObservableObject
 
     private async Task ReadStatusAsync()
     {
-        SetObservationNotice("");
         ServiceSnapshot snapshot;
+        string notice = "";
         try { snapshot = await adapter.ReadStateAsync(Root); }
         catch (Exception ex)
         {
             snapshot = new ServiceSnapshot(ServiceState.Unknown, null);
             observationDetails = ex.ToString();
-            SetObservationNotice("Состояние службы прочитать не удалось. Проверьте права доступа и нажмите «Обновить».");
+            notice = "Состояние службы прочитать не удалось. Проверьте права доступа и нажмите «Обновить».";
         }
+        if (snapshot.ObservationError != null) notice = PartialObservationNotice;
+        SetObservationNotice(notice);
         ShowObservedState(snapshot);
     }
 
@@ -196,7 +200,7 @@ public partial class MainViewModel : ObservableObject
         observedService = snapshot;
         if (snapshot.State != ServiceState.Unknown || snapshot.ObservationError != null) observationDetails = snapshot.ObservationError ?? "";
         if (snapshot.ObservationError != null)
-            SetObservationNotice("Часть сведений о службе прочитать не удалось. Проверьте права доступа и обновите состояние; изменение службы может быть недоступно.");
+            SetObservationNotice(PartialObservationNotice);
         serviceOwnership = snapshot.Ownership;
         AutostartText = snapshot.State == ServiceState.Missing ? "Автозапуск не установлен." : snapshot.Configuration?.StartType switch
         {

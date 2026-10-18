@@ -4,6 +4,7 @@ namespace Zapret.Gui.ViewModels;
 
 public partial class MainViewModel
 {
+    private const string PartialObservationNotice = "Часть сведений о службе прочитать не удалось. Проверьте права доступа и обновите состояние; изменение службы может быть недоступно.";
     private ServiceSnapshot observedService = new(ServiceState.Unknown, null);
     private bool refreshPending;
     private Task? observedRefresh;
@@ -15,9 +16,9 @@ public partial class MainViewModel
 
     private void SetObservationNotice(string notice)
     {
-        if (observationNotice.Length != 0) Error = Error.Replace(observationNotice, "").Trim();
+        var otherErrors = observationNotice.Length == 0 ? Error : Error.Replace(observationNotice, "").Trim();
         observationNotice = notice;
-        if (notice.Length != 0) Error = string.Join("\n", new[] { Error, notice }.Where(text => text.Length != 0));
+        Error = string.Join("\n", new[] { otherErrors, notice }.Where(text => text.Length != 0));
     }
     public string RegisteredStrategyText => observedService.State == ServiceState.Missing
         ? "Автозапуск: не установлен" : "Автозапуск: " + (observedService.Preset ?? "стратегия неизвестна");
