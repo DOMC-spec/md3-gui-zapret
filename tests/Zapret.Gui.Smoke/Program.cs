@@ -20,6 +20,12 @@ internal static class Program
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
+            if (args.Contains("--expressive-only"))
+            {
+                ExpressivePresentationChecks.Run(Complete);
+                app.Dispatcher.InvokeShutdown();
+                return 0;
+            }
             if (args.Contains("--actual-state-only"))
             {
                 ActualStatePresentationChecks.Run(Complete);
@@ -56,6 +62,7 @@ internal static class Program
             InterruptedPresentationChecks.Run(Complete);
             GameFilterPresentationChecks.Run(Complete);
             DomainListPresentationChecks.Run(Complete);
+            ExpressivePresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
@@ -68,11 +75,15 @@ internal static class Program
             if (args.Contains("--running")) snapshot = new(ServiceState.Running, "general (ALT)",
                 new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(selectedRoot, "bin", "winws.exe"))),
                 new ServiceProcess(19, Path.Combine(selectedRoot, "bin", "winws.exe"), 100));
-            IFlowsealAdapter adapter = args.Contains("--interrupted-preview") ? InterruptedPresentationChecks.Preview(selectedRoot)
+            IFlowsealAdapter adapter = args.Contains("--expressive-preview") ? ExpressivePresentationChecks.Preview(selectedRoot, args.Contains("--conflict"))
+                : args.Contains("--interrupted-preview") ? InterruptedPresentationChecks.Preview(selectedRoot)
                 : new FlowsealAdapter(args.Contains("--game-filter") ? new ProcessRunner() : new NoCommands(), () => Task.FromResult(snapshot));
             var viewModel = new MainViewModel(adapter, selectedRoot);
             window.DataContext = viewModel;
             Complete(viewModel.InitializeAsync());
+            if (args.Contains("--conflict")) Complete(viewModel.ApplyCommand.ExecuteAsync(null));
+            if (args.Contains("--reduced-motion")) viewModel.ReduceMotion = true;
+            if (args.Contains("--progress")) viewModel.IsBusy = true;
             if (args.Contains("--lists") && viewModel.Hostlists.Count != 0)
             {
                 viewModel.SelectedHostlist = viewModel.Hostlists.FirstOrDefault(list => list.Path.EndsWith("list-general-user.txt")) ?? viewModel.Hostlists[0];
@@ -86,9 +97,13 @@ internal static class Program
             CheckContrast(app, "OnPrimary", "Primary", 4.5);
             CheckContrast(app, "OnSecondaryContainer", "SecondaryContainer", 4.5);
             CheckContrast(app, "OnErrorContainer", "ErrorContainer", 4.5);
+            CheckContrast(app, "OnSurface", "PrimaryContainer", 4.5);
+            CheckContrast(app, "OnSurfaceVariant", "PrimaryContainer", 4.5);
             var width = args.Contains("--small") ? 720 : 760;
             var height = args.Contains("--small") ? 682 : 722;
             var grid = (FrameworkElement)window.Content;
+            var scale = args.Contains("--scale200") ? 2.0 : 1.0;
+            grid.LayoutTransform = new ScaleTransform(scale, scale);
             grid.Measure(new Size(width, height));
             grid.Arrange(new Rect(0, 0, width, height));
             grid.UpdateLayout();
@@ -112,8 +127,7 @@ internal static class Program
             {
                 var button = Find<Button>(grid, b => ReferenceEquals(b.Command, viewModel.StartManualCommand))
                     ?? throw new Exception("Manual trial button missing");
-                for (DependencyObject? parent = button; parent != null; parent = VisualTreeHelper.GetParent(parent))
-                    if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
+                button.BringIntoView();
                 grid.UpdateLayout();
             }
             if (args.Contains("--game-filter-bottom"))
@@ -143,7 +157,7 @@ internal static class Program
             using (var dc = visual.RenderOpen())
             {
                 dc.DrawRectangle((Brush)app.FindResource("M3.Surface"), null, new Rect(0, 0, width, height));
-                dc.DrawRectangle(new VisualBrush(grid), null, new Rect(grid.Margin.Left, grid.Margin.Top, grid.ActualWidth, grid.ActualHeight));
+                dc.DrawRectangle(new VisualBrush(grid), null, new Rect(grid.Margin.Left, grid.Margin.Top, grid.ActualWidth * scale, grid.ActualHeight * scale));
             }
             bitmap.Render(visual);
             var encoder = new PngBitmapEncoder();
@@ -152,6 +166,7 @@ internal static class Program
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             using (var output = File.Create(path)) encoder.Save(output);
             if (bindingErrors.Errors.Count != 0) throw new Exception(string.Join("\n", bindingErrors.Errors));
+            viewModel.IsBusy = false;
             window.Close();
             app.Dispatcher.InvokeShutdown();
             Console.WriteLine("PASS WPF resources, all tabs, bindings, M3 contrast and layout: " + Path.GetFullPath(path));

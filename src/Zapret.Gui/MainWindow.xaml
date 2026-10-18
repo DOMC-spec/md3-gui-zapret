@@ -3,12 +3,24 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
  xmlns:services="clr-namespace:Zapret.Gui.Services"
- Title="Zapret · Конфигуратор" Width="760" Height="760" MinWidth="720" MinHeight="720"
+ Title="Zapret · Оболочка Flowseal" Width="800" Height="820" MinWidth="720" MinHeight="720"
  WindowStartupLocation="CenterScreen" Style="{StaticResource MaterialDesignWindow}"
  FontFamily="{StaticResource M3.Font}" FontSize="14"
  Background="{DynamicResource M3.Surface}" Foreground="{DynamicResource M3.OnSurface}"
- Loaded="OnLoaded" Activated="OnActivated" Closing="OnClosing" UseLayoutRounding="True">
+ Loaded="OnLoaded" Activated="OnActivated" Closing="OnClosing" UseLayoutRounding="True"
+ md:TransitionAssist.DisableTransitions="{Binding ReduceMotion}">
  <Window.Resources>
+  <DataTemplate x:Key="ActionFeedback">
+   <Border Background="{DynamicResource M3.ErrorContainer}" CornerRadius="8,24,24,24" Padding="16" Margin="0,0,0,12"
+    Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}">
+    <StackPanel>
+     <TextBlock Text="Действие требует внимания" Style="{StaticResource M3.Title}" Foreground="{DynamicResource M3.OnErrorContainer}"/>
+     <TextBox Text="{Binding Error, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
+      Foreground="{DynamicResource M3.OnErrorContainer}" Margin="0,8,0,0" AutomationProperties.Name="Ошибка и следующий шаг" AutomationProperties.LiveSetting="Assertive"
+      TextChanged="OnErrorTextChanged" IsVisibleChanged="OnErrorVisibilityChanged"/>
+    </StackPanel>
+   </Border>
+  </DataTemplate>
   <Style x:Key="StatusIcon" TargetType="md:PackIcon">
    <Setter Property="Kind" Value="ShieldOutline"/>
    <Setter Property="Foreground" Value="{DynamicResource M3.OnSurfaceVariant}"/>
@@ -29,7 +41,7 @@
   </Grid.RowDefinitions>
   <!-- Small top app bar. Theme is an icon action; the service preference uses a switch. -->
   <Grid Margin="0,0,0,16">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
    <Border Width="40" Height="40" CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Center"
     Background="{DynamicResource M3.PrimaryContainer}">
     <md:PackIcon Kind="ShieldCheckOutline" Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -37,9 +49,11 @@
    </Border>
    <StackPanel Grid.Column="1">
     <TextBlock Text="Zapret" Style="{StaticResource M3.Headline}"/>
-    <TextBlock Text="Настройка подключения" Style="{StaticResource M3.Supporting}" Margin="0,2,0,0"/>
+    <TextBlock Text="Оболочка Flowseal" Style="{StaticResource M3.Supporting}" Margin="0,2,0,0"/>
    </StackPanel>
-   <ToggleButton Grid.Column="2" IsChecked="{Binding IsDark}" Style="{StaticResource M3.ThemeToggle}"
+   <ToggleButton Grid.Column="2" IsChecked="{Binding ReduceMotion}" Style="{StaticResource M3.MotionToggle}"
+    ToolTip="Уменьшить движение: статический прогресс и мгновенные переходы" AutomationProperties.Name="Уменьшить движение"/>
+   <ToggleButton Grid.Column="3" IsChecked="{Binding IsDark}" Style="{StaticResource M3.ThemeToggle}"
     ToolTip="Сменить светлую / тёмную тему" AutomationProperties.Name="Тёмная тема"/>
   </Grid>
 
@@ -47,10 +61,11 @@
    <TabItem AutomationProperties.Name="Служба">
     <TabItem.Header>
      <StackPanel><md:PackIcon Kind="Tune" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-      <TextBlock Text="Служба" HorizontalAlignment="Center"/></StackPanel>
+      <TextBlock Text="Служба" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/></StackPanel>
     </TabItem.Header>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
      <StackPanel>
+      <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ActionFeedback}"/>
       <Border Background="{DynamicResource M3.ErrorContainer}" CornerRadius="12" Padding="16" Margin="0,0,0,12"
        Visibility="{Binding HasInterruptedOperation, Converter={StaticResource BoolVisibility}}">
        <StackPanel>
@@ -62,20 +77,13 @@
         </WrapPanel>
        </StackPanel>
       </Border>
-      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,12">
-       <StackPanel>
+      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}" BorderThickness="1" CornerRadius="16" Padding="12" Margin="0,0,0,12">
         <Grid>
          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-         <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="Поставка Flowseal" Style="{StaticResource M3.Title}"/>
-          <TextBlock Text="{Binding DistributionVersion}" Style="{StaticResource M3.Supporting}" Margin="0,4,12,0"/>
-         </StackPanel>
-         <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" IsEnabled="{Binding CanChooseDistribution}" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
-        </Grid>
-
-        <Expander Header="Готовность компонентов и действий" Margin="0,8,0,0" Foreground="{DynamicResource M3.OnSurface}" AutomationProperties.Name="Подробности готовности поставки">
+        <Expander Header="Поставка Flowseal" Foreground="{DynamicResource M3.OnSurface}" AutomationProperties.Name="Подробности готовности поставки">
          <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,8,12,0">
+           <TextBlock Text="{Binding DistributionVersion}" Style="{StaticResource M3.Supporting}" Margin="0,0,0,8"/>
            <TextBlock Text="{Binding ReadinessText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,0,0,12"/>
            <TextBlock Text="{Binding MissingComponentsText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,8"/>
            <TextBlock Text="{Binding PathLimitations}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,12"/>
@@ -83,10 +91,11 @@
           </StackPanel>
          </ScrollViewer>
         </Expander>
-       </StackPanel>
+         <Button Grid.Column="1" Content="Выбрать папку" Click="OnChooseDistribution" IsEnabled="{Binding CanChooseDistribution}" VerticalAlignment="Top" Style="{StaticResource M3.TonalButton}" AutomationProperties.Name="Выбрать папку поставки Flowseal"/>
+        </Grid>
       </Border>
-      <!-- Filled card: surface-container-highest with on-surface content, no shadow. -->
-      <Border Background="{DynamicResource M3.SurfaceContainerHighest}" CornerRadius="12" Padding="16" Margin="0,0,0,8">
+      <!-- Current observation is distinct from the configuration selected for the next launch. -->
+      <Border Background="{DynamicResource M3.PrimaryContainer}" CornerRadius="28,28,8,28" Padding="20" Margin="0,0,0,16">
        <Grid>
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
         <StackPanel>
@@ -95,16 +104,17 @@
           <md:PackIcon Style="{StaticResource StatusIcon}" VerticalAlignment="Center" Margin="0,0,12,0"/>
           <TextBlock Text="{Binding StatusText}" Style="{StaticResource M3.Headline}"/>
          </StackPanel>
-         <TextBlock Text="{Binding SelectedStrategyText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
          <TextBlock Text="{Binding RegisteredStrategyText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,4,0,0"/>
          <TextBlock Text="{Binding RunningConfigurationText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-         <TextBlock Text="Работа службы и процесса не подтверждает доступность видео или голоса." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-         <TextBlock Text="{Binding AutostartText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-         <TextBlock Text="{Binding ServiceOwnershipText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-         <TextBlock Text="{Binding ActionReadiness}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-         <ProgressBar IsIndeterminate="True" Height="4" Margin="0,12,0,0" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" AutomationProperties.Name="Выполняется действие, дождитесь результата"/>
+         <TextBlock Text="Работа службы не подтверждает доступность видео или голоса." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+         <Expander Header="Принадлежность и автозапуск" Margin="0,8,0,0">
+          <StackPanel>
+           <TextBlock Text="{Binding AutostartText}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+           <TextBlock Text="{Binding ServiceOwnershipText}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
          <Expander Header="Технические подробности" Margin="0,8,0,0">
           <TextBox Text="{Binding TechnicalDetails, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Технические подробности состояния и последнего действия"/>
+         </Expander>
+          </StackPanel>
          </Expander>
         </StackPanel>
         <Button Grid.Column="1" Style="{StaticResource M3.IconButton}" VerticalAlignment="Top"
@@ -113,27 +123,28 @@
         </Button>
        </Grid>
       </Border>
-      <WrapPanel Margin="0,4,0,8">
-       <Button Content="Запустить службу" Command="{Binding StartServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
-       <Button Content="Остановить временно" Command="{Binding StopServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"
-        ToolTip="Остановить свою службу, сохранив регистрацию и тип запуска Windows"/>
-      </WrapPanel>
-      <!-- Outlined card is the less prominent configuration area. -->
-      <Border Background="{DynamicResource M3.Surface}" BorderBrush="{DynamicResource M3.OutlineVariant}"
-       BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,8">
+      <!-- Separate choice, manual trial and persistent autostart. -->
+      <Border Style="{StaticResource M3.StepCard}">
        <StackPanel>
-        <TextBlock Text="Стратегия обхода" Style="{StaticResource M3.Title}"/>
+        <TextBlock Text="01 · ВЫБОР" Style="{StaticResource M3.Label}"/>
+        <TextBlock Text="Ваша стратегия" Style="{StaticResource M3.SectionTitle}" Margin="0,4,0,0"/>
         <Grid Margin="0,20,0,4">
          <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name"
-          Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Стратегия обхода"/>
+          Style="{StaticResource M3.ComboBox}" ToolTip="{Binding SelectedPreset.Name}" AutomationProperties.Name="Стратегия обхода"/>
          <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
           <TextBlock Text="Стратегия" Style="{StaticResource M3.Label}"/>
          </Border>
         </Grid>
+        <TextBlock Text="{Binding SelectedStrategyText}" Style="{StaticResource M3.Supporting}" Margin="0,8,0,0"/>
         <TextBlock Text="{Binding StrategyReadiness}" Style="{StaticResource M3.Supporting}" Margin="16,4,16,0" TextWrapping="Wrap"/>
         <Button Content="Проверить действие" Command="{Binding CheckActionCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left" Margin="0,12,0,8" AutomationProperties.Name="Проверить стратегию и принадлежность службы без изменений"/>
 
-        <TextBlock Text="Пробный сеанс" Style="{StaticResource M3.Title}" Margin="0,12,0,8"/>
+       </StackPanel>
+      </Border>
+      <Border Style="{StaticResource M3.StepCard}" Background="{DynamicResource M3.SecondaryContainer}">
+       <StackPanel>
+        <TextBlock Text="02 · ПРОБНЫЙ ЗАПУСК" Style="{StaticResource M3.Label}"/>
+        <TextBlock Text="Попробовать сейчас" Style="{StaticResource M3.SectionTitle}" Margin="0,4,0,8"/>
         <TextBlock Text="{Binding ManualConsequences}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
         <WrapPanel Margin="0,12,0,0">
          <Button Content="Попробовать стратегию" Command="{Binding StartManualCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
@@ -144,6 +155,19 @@
 
        </StackPanel>
       </Border>
+      <Border Style="{StaticResource M3.StepCard}">
+       <StackPanel>
+        <TextBlock Text="03 · АВТОЗАПУСК" Style="{StaticResource M3.Label}"/>
+        <TextBlock Text="При загрузке Windows" Style="{StaticResource M3.SectionTitle}" Margin="0,4,0,8"/>
+        <TextBlock Text="Установка выбранной стратегии в службу zapret. После закрытия оболочки автозапуск сохраняется." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <Button Content="Включить при загрузке Windows" Command="{Binding ApplyCommand}" Style="{StaticResource M3.FilledButton}" HorizontalAlignment="Left"/>
+        <WrapPanel Margin="0,12,0,0">
+         <Button Content="Запустить службу" Command="{Binding StartServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
+         <Button Content="Остановить временно" Command="{Binding StopServiceCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"
+          ToolTip="Остановить свою службу, сохранив регистрацию и тип запуска Windows"/>
+        </WrapPanel>
+        <Button Content="Удалить автозапуск" Command="{Binding RemoveCommand}" Style="{StaticResource M3.DestructiveButton}" HorizontalAlignment="Left"
+         ToolTip="Остановить свою службу, если она работает, и удалить её регистрацию в Windows"/>
       <Grid Margin="16,16,12,8">
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
        <StackPanel VerticalAlignment="Center">
@@ -154,17 +178,22 @@
         VerticalAlignment="Center" HorizontalAlignment="Right" AutomationProperties.Name="Закрыть после применения"/>
       </Grid>
       <TextBlock Text="{Binding FileSummary}" Style="{StaticResource M3.Label}" Margin="16,8,0,4"/>
+       </StackPanel>
+      </Border>
+      <TextBlock Text="Результат и следующий шаг" Style="{StaticResource M3.Title}" Margin="4,8,0,8"/>
+      <TextBlock Text="{Binding ActionReadiness}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="4,0,4,16" AutomationProperties.LiveSetting="Polite"/>
      </StackPanel>
     </ScrollViewer>
    </TabItem>
    <TabItem AutomationProperties.Name="Game Filter и порты">
     <TabItem.Header>
      <StackPanel><md:PackIcon Kind="GamepadVariantOutline" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-      <TextBlock Text="Game Filter" HorizontalAlignment="Center"/></StackPanel>
+      <TextBlock Text="Game Filter" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/></StackPanel>
     </TabItem.Header>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="0,0,12,0">
-      <TextBlock Text="Game Filter и порты" Style="{StaticResource M3.Title}"/>
+      <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ActionFeedback}"/>
+      <TextBlock Text="Game Filter и порты" Style="{StaticResource M3.SectionTitle}"/>
       <TextBlock Text="{Binding GameFilterObserved}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,8"/>
       <Button Content="Прочитать настройки" Command="{Binding LoadGameFilterCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left"/>
       <StackPanel IsEnabled="{Binding CanEditGameFilter}" Margin="0,12,0,0">
@@ -188,25 +217,24 @@
    <TabItem AutomationProperties.Name="Списки доменов">
     <TabItem.Header>
      <StackPanel><md:PackIcon Kind="FormatListBulleted" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-      <TextBlock Text="Списки доменов" HorizontalAlignment="Center"/></StackPanel>
+      <TextBlock Text="Списки доменов" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/></StackPanel>
     </TabItem.Header>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="0,0,12,0">
-      <TextBlock Text="Сайты и исключения" Style="{StaticResource M3.Title}"/>
+      <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ActionFeedback}"/>
+      <TextBlock Text="Сайты и исключения" Style="{StaticResource M3.SectionTitle}"/>
       <TextBlock Text="Выберите назначение списка, откройте его и добавьте домен." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,6,0,16"/>
-      <Grid>
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel>
        <ComboBox ItemsSource="{Binding Hostlists}" SelectedItem="{Binding SelectedHostlist}" DisplayMemberPath="Name" Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Назначение списка"/>
-       <Button Grid.Column="1" Content="Открыть" Command="{Binding LoadHostlistCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0"/>
-      </Grid>
+       <Button Content="Открыть" Command="{Binding LoadHostlistCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+      </StackPanel>
       <TextBlock Text="{Binding ListTargetName}" Style="{StaticResource M3.Title}" Margin="0,16,0,6"/>
       <TextBlock Text="{Binding ListPurpose}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
       <TextBlock Text="{Binding ListUsage}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,12"/>
-      <Grid IsEnabled="{Binding HasLoadedHostlist}">
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel IsEnabled="{Binding HasLoadedHostlist}">
        <TextBox Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}" AutomationProperties.Name="Сайт или исключение, домен без адреса и пути"/>
-       <Button Grid.Column="1" Content="Добавить и сохранить" Command="{Binding AddDomainCommand}" Style="{StaticResource M3.FilledButton}" Margin="12,0,0,0"/>
-      </Grid>
+       <Button Content="Добавить и сохранить" Command="{Binding AddDomainCommand}" Style="{StaticResource M3.FilledButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+      </StackPanel>
       <TextBlock Text="Например example.org или пример.рф, без https:// и пути." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,6,0,12"/>
       <TextBlock Text="{Binding ListMessage}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,0,0,12"/>
       <WrapPanel>
@@ -217,7 +245,7 @@
        <StackPanel>
         <TextBlock Text="{Binding LoadedFileName}" Style="{StaticResource M3.Label}" TextWrapping="Wrap" Margin="0,8,0,8"/>
         <TextBox Text="{Binding HostlistText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding HasLoadedHostlist}"
-         AcceptsReturn="True" AcceptsTab="True" MinHeight="140" MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+         AcceptsReturn="True" AcceptsTab="False" MinHeight="140" MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
          FontFamily="Consolas" FontSize="14" AutomationProperties.Name="Черновик списка доменов"/>
         <WrapPanel Margin="0,12,0,0">
          <Button Content="Сохранить текст" Command="{Binding SaveHostlistCommand}" Style="{StaticResource M3.FilledButton}" Margin="0,0,8,8"/>
@@ -239,34 +267,18 @@
    </TabItem>
   </TabControl>
 
-  <StackPanel Grid.Row="2" Margin="0,12,0,0">
-   <Border Background="{DynamicResource M3.ErrorContainer}" CornerRadius="12" Padding="16" Margin="0,0,0,12"
-    Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}">
-    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-     <md:PackIcon Kind="AlertCircleOutline" Width="24" Height="24" Foreground="{DynamicResource M3.OnErrorContainer}"/>
-     <ScrollViewer Grid.Column="1" MaxHeight="80" VerticalScrollBarVisibility="Auto">
-      <TextBlock Text="{Binding Error}" Style="{StaticResource M3.Body}" Foreground="{DynamicResource M3.OnErrorContainer}" TextWrapping="Wrap"/>
-     </ScrollViewer>
-    </Grid>
-   </Border>
-   <ProgressBar Height="4" IsIndeterminate="True" Foreground="{DynamicResource M3.Primary}" Background="{DynamicResource M3.SecondaryContainer}"
-    Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"/>
+  <StackPanel Grid.Row="2" Margin="0,8,0,0" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}">
+   <TextBlock Text="Выполняется действие. Дождитесь результата…" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+   <ProgressBar Height="4" Margin="0,8,0,0" Foreground="{DynamicResource M3.Primary}" Background="{DynamicResource M3.SecondaryContainer}" Value="100">
+    <ProgressBar.Style><Style TargetType="ProgressBar" BasedOn="{StaticResource MaterialDesignLinearProgressBar}">
+     <Setter Property="IsIndeterminate" Value="True"/>
+     <Style.Triggers><DataTrigger Binding="{Binding ReduceMotion}" Value="True"><Setter Property="IsIndeterminate" Value="False"/></DataTrigger></Style.Triggers>
+    </Style></ProgressBar.Style>
+   </ProgressBar>
   </StackPanel>
   <Grid Grid.Row="3" Margin="0,8,0,0">
-   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <Grid>
-    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <Button Content="Удалить автозапуск" Command="{Binding RemoveCommand}" Style="{StaticResource M3.DestructiveButton}"
-     ToolTip="Остановить свою службу, если она работает, и удалить её регистрацию в Windows"/>
-    <Button Grid.Column="2" Command="{Binding ApplyCommand}" Style="{StaticResource M3.FilledButton}" Padding="16,0,24,0">
-     <StackPanel Orientation="Horizontal">
-      <md:PackIcon Kind="Check" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
-       <TextBlock Text="Включить при загрузке Windows" VerticalAlignment="Center"/>
-     </StackPanel>
-    </Button>
-   </Grid>
-   <TextBlock Grid.Row="1" Text="{Binding Root}" Style="{StaticResource M3.Label}" Margin="0,12,0,0"
-    FontWeight="Normal" TextTrimming="CharacterEllipsis" ToolTip="{Binding Root}"/>
+   <TextBlock Text="{Binding Root}" Style="{StaticResource M3.Label}" Margin="0,4,0,0"
+    FontWeight="Normal" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Root}"/>
   </Grid>
   <md:Snackbar Grid.RowSpan="4" MessageQueue="{Binding Notifications}" VerticalAlignment="Bottom"
    Background="{DynamicResource M3.InverseSurface}" Foreground="{DynamicResource M3.InverseOnSurface}"/>

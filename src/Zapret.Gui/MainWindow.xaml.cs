@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Automation.Peers;
 using Zapret.Gui.ViewModels;
 
 namespace Zapret.Gui;
@@ -11,6 +13,7 @@ public partial class MainWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer observationTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private bool refreshingObservedState;
     private bool initialized;
+    private string lastPresentedError = "";
     public MainWindow()
     {
         InitializeComponent();
@@ -35,6 +38,19 @@ public partial class MainWindow : Window
     private async void OnActivated(object? sender, EventArgs e)
     {
         if (initialized) await Model.RefreshObservedStateAsync();
+    }
+    private void OnErrorTextChanged(object sender, TextChangedEventArgs e) => PresentError((TextBox)sender);
+    private void OnErrorVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => PresentError((TextBox)sender);
+    private void PresentError(TextBox text)
+    {
+        if (!text.IsVisible || text.Text.Length == 0 || text.Text == lastPresentedError) return;
+        lastPresentedError = text.Text;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!text.IsVisible) return;
+            text.BringIntoView();
+            UIElementAutomationPeer.CreatePeerForElement(text)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }));
     }
     private async void OnChooseDistribution(object sender, RoutedEventArgs e)
     {

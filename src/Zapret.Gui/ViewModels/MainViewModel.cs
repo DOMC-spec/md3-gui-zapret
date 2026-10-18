@@ -44,6 +44,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string hostlistText = "";
     [ObservableProperty] private string domain = "";
     [ObservableProperty] private bool isDark;
+    [ObservableProperty] private bool reduceMotion = !SystemParameters.ClientAreaAnimation;
     [ObservableProperty] private bool hasManualSession;
     [ObservableProperty] private string manualStatusText = "Пробный сеанс не запущен.";
     [ObservableProperty] private string manualProcessText = "";
@@ -162,7 +163,11 @@ public partial class MainViewModel : ObservableObject
         if (IsBusy) return;
         IsBusy = true;
         if (clearError) Error = "";
-        try { await action(); }
+        try
+        {
+            if (observedRefresh != null) await observedRefresh;
+            await action();
+        }
         catch (Exception ex) { Error = ex.Message; }
         finally
         {

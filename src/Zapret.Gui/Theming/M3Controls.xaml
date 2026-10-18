@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes">
+ xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+ xmlns:sys="clr-namespace:System;assembly=mscorlib">
  <FontFamily x:Key="M3.Font">pack://application:,,,/MaterialDesignThemes.Wpf;component/Resources/Roboto/#Roboto</FontFamily>
 
  <Style x:Key="M3.Body" TargetType="TextBlock">
@@ -8,6 +9,7 @@
   <Setter Property="FontSize" Value="14"/><Setter Property="LineHeight" Value="20"/>
   <Setter Property="FontWeight" Value="Normal"/>
   <Setter Property="Foreground" Value="{DynamicResource M3.OnSurface}"/>
+  <Setter Property="TextWrapping" Value="Wrap"/>
  </Style>
  <Style x:Key="M3.Supporting" TargetType="TextBlock" BasedOn="{StaticResource M3.Body}">
   <Setter Property="Foreground" Value="{DynamicResource M3.OnSurfaceVariant}"/>
@@ -20,15 +22,34 @@
   <Setter Property="FontSize" Value="16"/><Setter Property="LineHeight" Value="24"/><Setter Property="FontWeight" Value="Medium"/>
  </Style>
  <Style x:Key="M3.Headline" TargetType="TextBlock" BasedOn="{StaticResource M3.Body}">
-  <Setter Property="FontSize" Value="24"/><Setter Property="LineHeight" Value="32"/>
+  <Setter Property="FontSize" Value="30"/><Setter Property="LineHeight" Value="36"/><Setter Property="FontWeight" Value="SemiBold"/>
+  <Setter Property="TextWrapping" Value="Wrap"/>
+ </Style>
+ <Style x:Key="M3.SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource M3.Title}">
+  <Setter Property="FontSize" Value="22"/><Setter Property="LineHeight" Value="28"/><Setter Property="FontWeight" Value="SemiBold"/>
+  <Setter Property="TextWrapping" Value="Wrap"/>
+ </Style>
+ <Style x:Key="M3.StepCard" TargetType="Border">
+  <Setter Property="Background" Value="{DynamicResource M3.SurfaceContainerLow}"/>
+  <Setter Property="CornerRadius" Value="24,8,24,24"/><Setter Property="Padding" Value="20"/>
+  <Setter Property="Margin" Value="0,0,0,12"/>
+ </Style>
+ <Style x:Key="M3.Focus" TargetType="Control">
+  <Setter Property="Template"><Setter.Value><ControlTemplate>
+   <Border BorderBrush="{DynamicResource M3.Primary}" BorderThickness="3" CornerRadius="8" Margin="-2"/>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <Style TargetType="Expander" BasedOn="{StaticResource MaterialDesignExpander}">
+  <Setter Property="FocusVisualStyle" Value="{StaticResource M3.Focus}"/>
+  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
  </Style>
 
- <!-- 40dp visual container in a 48dp pointer/keyboard target. -->
+ <!-- Minimum 48dp target; text can wrap and increase the height. -->
  <Style x:Key="M3.Button" TargetType="Button">
   <Setter Property="FontFamily" Value="{StaticResource M3.Font}"/>
   <Setter Property="FontSize" Value="14"/><Setter Property="FontWeight" Value="Medium"/>
-  <Setter Property="Height" Value="48"/><Setter Property="MinWidth" Value="64"/>
-  <Setter Property="Padding" Value="24,0"/><Setter Property="Cursor" Value="Hand"/>
+  <Setter Property="MinHeight" Value="48"/><Setter Property="MinWidth" Value="64"/>
+  <Setter Property="Padding" Value="20,12"/><Setter Property="Cursor" Value="Hand"/>
   <Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/>
   <Setter Property="BorderThickness" Value="0"/>
   <Setter Property="Foreground" Value="{DynamicResource M3.Primary}"/>
@@ -38,17 +59,21 @@
   <Setter Property="Template"><Setter.Value>
    <ControlTemplate TargetType="Button">
     <Grid Background="Transparent">
-     <Border x:Name="Container" Margin="0,4" CornerRadius="20" Background="{TemplateBinding Background}"
+     <Border x:Name="Container" Margin="0,2" CornerRadius="24" Background="{TemplateBinding Background}"
       BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"/>
      <Border x:Name="StateLayer" Margin="0,4" CornerRadius="20" Background="{TemplateBinding Foreground}" Opacity="0" IsHitTestVisible="False"/>
      <Border x:Name="FocusRing" Margin="-3,1" CornerRadius="23" BorderBrush="{DynamicResource M3.Primary}" BorderThickness="3" Visibility="Collapsed" IsHitTestVisible="False"/>
      <ContentPresenter x:Name="Content" Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-      VerticalAlignment="Center" RecognizesAccessKey="True"/>
+      VerticalAlignment="Center" RecognizesAccessKey="True">
+      <ContentPresenter.Resources><DataTemplate DataType="{x:Type sys:String}">
+       <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/>
+      </DataTemplate></ContentPresenter.Resources>
+     </ContentPresenter>
     </Grid>
     <ControlTemplate.Triggers>
      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="StateLayer" Property="Opacity" Value=".08"/></Trigger>
      <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="StateLayer" Property="Opacity" Value=".10"/><Setter TargetName="FocusRing" Property="Visibility" Value="Visible"/></Trigger>
-     <Trigger Property="IsPressed" Value="True"><Setter TargetName="StateLayer" Property="Opacity" Value=".10"/></Trigger>
+     <Trigger Property="IsPressed" Value="True"><Setter TargetName="StateLayer" Property="Opacity" Value=".10"/><Setter TargetName="Container" Property="CornerRadius" Value="12"/></Trigger>
      <Trigger Property="IsEnabled" Value="False">
       <Setter Property="Foreground" Value="{DynamicResource M3.OnSurface}"/>
       <Setter TargetName="Content" Property="Opacity" Value=".38"/>
@@ -95,21 +120,36 @@
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
+ <Style x:Key="M3.MotionToggle" TargetType="ToggleButton" BasedOn="{StaticResource M3.ThemeToggle}">
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+   <Grid Background="Transparent">
+    <Border x:Name="State" Margin="3" CornerRadius="16" Background="{DynamicResource M3.SecondaryContainer}" Opacity="0"/>
+    <md:PackIcon x:Name="Icon" Kind="PlayCircleOutline" Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <Border x:Name="Focus" Margin="1" CornerRadius="16" BorderBrush="{DynamicResource M3.Primary}" BorderThickness="3" Visibility="Collapsed" IsHitTestVisible="False"/>
+   </Grid>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Icon" Property="Kind" Value="PauseCircleOutline"/><Setter TargetName="State" Property="Opacity" Value="1"/></Trigger>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="State" Property="Opacity" Value="1"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Focus" Property="Visibility" Value="Visible"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
 
  <Style x:Key="M3.TabItem" TargetType="TabItem">
   <Setter Property="FontFamily" Value="{StaticResource M3.Font}"/><Setter Property="FontSize" Value="14"/>
   <Setter Property="FontWeight" Value="Medium"/><Setter Property="Foreground" Value="{DynamicResource M3.OnSurfaceVariant}"/>
   <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
-   <Grid Height="64" Background="Transparent">
-    <Border x:Name="State" Background="{DynamicResource M3.Primary}" Opacity="0"/>
+   <Grid MinHeight="64" Background="Transparent" Margin="2">
+    <Border x:Name="State" CornerRadius="22" Background="{DynamicResource M3.Primary}" Opacity="0"/>
+    <Border x:Name="SelectedShape" CornerRadius="22,22,8,22" Background="{DynamicResource M3.SecondaryContainer}" Visibility="Collapsed"/>
     <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-    <Border x:Name="Indicator" Width="96" Height="3" Background="{DynamicResource M3.Primary}" CornerRadius="3,3,0,0" VerticalAlignment="Bottom" Visibility="Collapsed"/>
+    <Border x:Name="FocusRing" Margin="1" CornerRadius="22" BorderBrush="{DynamicResource M3.Primary}" BorderThickness="3" Visibility="Collapsed" IsHitTestVisible="False"/>
    </Grid>
    <ControlTemplate.Triggers>
-    <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource M3.Primary}"/><Setter TargetName="Indicator" Property="Visibility" Value="Visible"/></Trigger>
+    <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource M3.OnSecondaryContainer}"/><Setter TargetName="SelectedShape" Property="Visibility" Value="Visible"/></Trigger>
     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="State" Property="Opacity" Value=".08"/></Trigger>
-    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="State" Property="Opacity" Value=".10"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusRing" Property="Visibility" Value="Visible"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
@@ -129,21 +169,23 @@
  <Style x:Key="M3.ComboBox" TargetType="ComboBox" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}">
   <Setter Property="FontFamily" Value="{StaticResource M3.Font}"/><Setter Property="FontSize" Value="16"/>
   <Setter Property="FontWeight" Value="Normal"/>
-  <Setter Property="Height" Value="56"/><Setter Property="Padding" Value="16,0"/>
+  <Setter Property="MinHeight" Value="56"/><Setter Property="Padding" Value="16,12"/>
+  <Setter Property="FocusVisualStyle" Value="{StaticResource M3.Focus}"/>
   <Setter Property="Background" Value="{DynamicResource M3.Surface}"/>
   <Setter Property="Foreground" Value="{DynamicResource M3.OnSurface}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource M3.Outline}"/>
-  <Setter Property="md:TextFieldAssist.TextFieldCornerRadius" Value="4"/>
+  <Setter Property="md:TextFieldAssist.TextFieldCornerRadius" Value="12"/>
  </Style>
  <Style x:Key="M3.TextField" TargetType="TextBox" BasedOn="{StaticResource MaterialDesignOutlinedTextBox}">
   <Setter Property="FontFamily" Value="{StaticResource M3.Font}"/><Setter Property="FontSize" Value="16"/>
   <Setter Property="FontWeight" Value="Normal"/>
-  <Setter Property="Height" Value="56"/><Setter Property="Padding" Value="16,0"/>
+  <Setter Property="MinHeight" Value="56"/><Setter Property="Padding" Value="16,12"/>
+  <Setter Property="FocusVisualStyle" Value="{StaticResource M3.Focus}"/>
   <Setter Property="VerticalContentAlignment" Value="Center"/>
   <Setter Property="Foreground" Value="{DynamicResource M3.OnSurface}"/>
   <Setter Property="Background" Value="{DynamicResource M3.Surface}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource M3.Outline}"/>
-  <Setter Property="md:TextFieldAssist.TextFieldCornerRadius" Value="4"/>
+  <Setter Property="md:TextFieldAssist.TextFieldCornerRadius" Value="12"/>
  </Style>
  <Style x:Key="M3.Switch" TargetType="ToggleButton">
   <Setter Property="Width" Value="52"/><Setter Property="Height" Value="48"/><Setter Property="Cursor" Value="Hand"/>

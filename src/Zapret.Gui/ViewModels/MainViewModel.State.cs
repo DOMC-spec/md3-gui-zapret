@@ -6,6 +6,7 @@ public partial class MainViewModel
 {
     private ServiceSnapshot observedService = new(ServiceState.Unknown, null);
     private bool refreshPending;
+    private Task? observedRefresh;
     private string observationDetails = "";
     private string operationDetails = "";
     private string recoveryDetails = "";
@@ -40,13 +41,22 @@ public partial class MainViewModel
 
     public Task RefreshObservedStateAsync()
     {
-        if (IsBusy) { refreshPending = true; return Task.CompletedTask; }
-        return PerformAsync(async () =>
+        if (IsBusy || observedRefresh != null) { refreshPending = true; return Task.CompletedTask; }
+        return observedRefresh = ObserveWithoutInterruptingInputAsync();
+    }
+
+    private async Task ObserveWithoutInterruptingInputAsync()
+    {
+        // Store the task before completing even when an adapter returns synchronously.
+        await Task.Yield();
+        try
         {
             await ReadStatusAsync();
             await PollManualSessionAsync();
             await ReadInterruptedOperationAsync();
-        }, clearError: false);
+        }
+        finally { observedRefresh = null; }
+        if (refreshPending && !IsBusy) { refreshPending = false; await RefreshObservedStateAsync(); }
     }
 
     private async Task<FlowsealActionResult?> ExecuteObservedActionAsync(FlowsealActionRequest request)
