@@ -20,8 +20,6 @@ public sealed record GameFilterSettings(string Mode, string TcpRange, string Udp
             || value.Split(',').Any(item => { var ends = item.Split('-').Select(int.Parse).ToArray();
                 return ends.Any(port => port > 65535) || ends[0] > ends[^1]; }))
             throw new FormatException($"{protocol}: введите порты 1–65535 или возрастающие диапазоны через запятую, без ведущих нулей. Пустое значение недопустимо; стандартный диапазон — 1024-65535.");
-        // Leave room for the fixed CMD helper invocation and upstream SET/CALL expansion.
-        if (value.Length > 1024) throw new FormatException($"{protocol}: список портов слишком длинный (максимум 1024 символа).");
         return value;
     }
 }
@@ -64,25 +62,48 @@ public sealed partial class FlowsealAdapter
                 if (flag == null)
                 {
                     using var created = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-                    created.Write(bytes);
-                    created.Flush(true);
-                    created.Position = 0;
-                    source.Position = 0;
-                    return ReadFrozenSettings(source, ReadSettingsBytes(created), Revision(bytes));
+                    return WriteAndReadBack(created, source, bytes, [], null);
                 }
                 var backup = path + "." + Guid.NewGuid().ToString("N") + ".bak";
                 using (var copy = new FileStream(backup, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 { copy.Write(before!); copy.Flush(true); }
-                flag.Position = 0;
-                flag.Write(bytes);
-                flag.SetLength(bytes.Length);
-                flag.Flush(true);
-                flag.Position = 0;
-                source.Position = 0;
-                return ReadFrozenSettings(source, ReadSettingsBytes(flag), Revision(bytes));
+                return WriteAndReadBack(flag, source, bytes, before!, backup);
             }
             finally { if (acquired) guard.ReleaseMutex(); }
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+    private GameFilterSnapshot WriteAndReadBack(FileStream file, Stream source, byte[] bytes, byte[] before, string? backup)
+    {
+        try
+        {
+            WriteSettings(bytes);
+            var actual = ReadSettingsBytes(file)!;
+            if (!actual.SequenceEqual(bytes)) throw new IOException("Записанные настройки отличаются от ожидаемых.");
+            return ReadFrozenSettings(source, actual, Revision(actual));
+        }
+        catch (Exception error) when (Recoverable(error))
+        {
+            try { WriteSettings(before); }
+            catch (Exception recoveryError) when (Recoverable(recoveryError))
+            {
+                throw new IOException("Не удалось сохранить или вернуть настройки Game Filter. "
+                    + (backup == null ? "Прежде файл отсутствовал; штатный режим — отключён." : "Исходные байты сохранены: " + backup)
+                    + " Ошибка возврата: " + recoveryError.Message, error);
+            }
+            throw new IOException("Сохранение Game Filter не завершено; прежние настройки возвращены. "
+                + (backup == null ? "Вместо отсутствовавшего файла оставлен пустой файл: Flowseal читает его как отключённый режим со стандартными диапазонами. " : "Резервная копия: " + backup + ". ")
+                + error.Message, error);
+        }
+
+        void WriteSettings(byte[] content)
+        {
+            file.Position = 0;
+            file.Write(content);
+            file.SetLength(content.Length);
+            file.Flush(true);
+            file.Position = 0;
+        }
+    }
 
     private FileStream OpenGameFilterSource(string root)
     {
@@ -104,7 +125,6 @@ public sealed partial class FlowsealAdapter
     private static byte[]? ReadSettingsBytes(Stream? stream)
     {
         if (stream == null) return null;
-        if (stream.Length > 8192) throw new IOException("Файл Game Filter слишком большой для безопасного чтения через CMD.");
         using var copy = new MemoryStream();
         stream.CopyTo(copy);
         return copy.ToArray();

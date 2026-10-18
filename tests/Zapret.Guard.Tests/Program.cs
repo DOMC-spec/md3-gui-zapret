@@ -90,17 +90,20 @@ try
         await PreparationScenarios.Run(root);
         return;
     }
-    await GameFilterScenarios.Run(root);
-    await PreparationScenarios.Run(root);
-    if (args.Contains("--review-recovery"))
+    if (!args.Contains("--guards-only"))
     {
-        await RecoveryScenarios.RunReview(root);
-        return;
+        await GameFilterScenarios.Run(root);
+        await PreparationScenarios.Run(root);
+        if (args.Contains("--review-recovery"))
+        {
+            await RecoveryScenarios.RunReview(root);
+            return;
+        }
+        await RecoveryScenarios.Run(root);
+        await ServiceControlScenarios.Run(root);
+        await ManualSessionScenarios.Run(root);
+        await InterruptedOperationScenarios.Run(root);
     }
-    await RecoveryScenarios.Run(root);
-    await ServiceControlScenarios.Run(root);
-    await ManualSessionScenarios.Run(root);
-    await InterruptedOperationScenarios.Run(root);
     var runner = new RejectCommands();
     var installedByBat = new ServiceSnapshot(ServiceState.Stopped, null,
         new ServiceConfiguration(CommandLine.Quote(Path.Combine(root, "bin", "winws.exe")) + " --wf-tcp=443"));

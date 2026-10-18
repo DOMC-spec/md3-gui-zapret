@@ -55,10 +55,11 @@ internal static class Program
                 new ServiceConfiguration(Zapret.Core.CommandLine.Quote(Path.Combine(selectedRoot, "bin", "winws.exe"))),
                 new ServiceProcess(19, Path.Combine(selectedRoot, "bin", "winws.exe"), 100));
             IFlowsealAdapter adapter = args.Contains("--interrupted-preview") ? InterruptedPresentationChecks.Preview(selectedRoot)
-                : new FlowsealAdapter(new NoCommands(), () => Task.FromResult(snapshot));
+                : new FlowsealAdapter(args.Contains("--game-filter") ? new ProcessRunner() : new NoCommands(), () => Task.FromResult(snapshot));
             var viewModel = new MainViewModel(adapter, selectedRoot);
             window.DataContext = viewModel;
             Complete(viewModel.InitializeAsync());
+            if (args.Contains("--game-filter")) Complete(viewModel.LoadGameFilterCommand.ExecuteAsync(null));
             if (args.Contains("--error")) viewModel.Error = "Не найден bin\\winws.exe. Поместите конфигуратор в корневую папку zapret.";
             if (args.Contains("--dark")) viewModel.IsDark = true;
             CheckContrast(app, "OnSurface", "Surface", 4.5);
@@ -90,6 +91,14 @@ internal static class Program
                     if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
                 grid.UpdateLayout();
             }
+            if (args.Contains("--game-filter-bottom"))
+            {
+                var button = Find<Button>(grid, b => ReferenceEquals(b.Command, viewModel.SaveGameFilterCommand))
+                    ?? throw new Exception("Game Filter save button missing");
+                for (DependencyObject? parent = button; parent != null; parent = VisualTreeHelper.GetParent(parent))
+                    if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
+                grid.UpdateLayout();
+            }
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
@@ -106,7 +115,7 @@ internal static class Program
             if (bindingErrors.Errors.Count != 0) throw new Exception(string.Join("\n", bindingErrors.Errors));
             window.Close();
             app.Dispatcher.InvokeShutdown();
-            Console.WriteLine("PASS WPF resources, both tabs, bindings, M3 contrast and layout: " + Path.GetFullPath(path));
+            Console.WriteLine("PASS WPF resources, all tabs, bindings, M3 contrast and layout: " + Path.GetFullPath(path));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }

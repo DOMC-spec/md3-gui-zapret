@@ -4,7 +4,7 @@ static class GameFilterScenarios
 {
     public static async Task Run(string root)
     {
-        var adapter = new FlowsealAdapter(new ProcessRunner());
+        var adapter = new FlowsealAdapter(new ProcessRunner(), operationJournal: new MemoryOperationJournal());
         var original = await adapter.ReadGameFilterAsync(root);
         if (original.Settings != new GameFilterSettings("disabled", "1024-65535", "1024-65535"))
             throw new Exception("Absent settings must display upstream defaults");
@@ -76,5 +76,37 @@ static class GameFilterScenarios
         catch (IOException error) when (error.Message.Contains("символы")) { }
         File.Delete(flag);
         Console.WriteLine("PASS invalid ranges preserve file; external edit/deletion conflict and unsafe input are refused");
+        var longRange = string.Join(',', Enumerable.Repeat("80", 360));
+        File.WriteAllText(flag, "mode=tcp\r\ntcp=" + longRange + "\r\nudp=53\r\n");
+        var longRead = await adapter.ReadGameFilterAsync(root);
+        var longSaved = await adapter.SaveGameFilterAsync(root, longRead.Settings, longRead.Revision);
+        if (longSaved.Settings.TcpRange != longRange || longSaved.Tcp != longRange) throw new Exception("Native ranges over 1024 characters must roundtrip");
+        File.Delete(flag);
+        foreach (var exists in new[] { true, false })
+        {
+            if (exists) File.WriteAllText(flag, "mode=tcp\r\ntcp=80\r\nudp=53\r\n");
+            var beforeFailure = await adapter.ReadGameFilterAsync(root);
+            var faulted = new FlowsealAdapter(new FailReadBack(), operationJournal: new MemoryOperationJournal());
+            try { await faulted.SaveGameFilterAsync(root, new("all", "5000", "6000"), beforeFailure.Revision); throw new Exception("Readback failure ignored"); }
+            catch (IOException error) when (error.Message.Contains("прежние настройки возвращены")) { }
+            var restored = await adapter.ReadGameFilterAsync(root);
+            if (restored.Settings != beforeFailure.Settings) throw new Exception("Readback failure lost previous configuration");
+            if (exists && File.ReadAllText(flag) != "mode=tcp\r\ntcp=80\r\nudp=53\r\n") throw new Exception("Readback failure must restore exact bytes");
+            File.Delete(flag);
+        }
+        Console.WriteLine("PASS long native ranges and failed post-save helper restore previous/absent settings");
+        File.WriteAllText(flag, string.Concat(Enumerable.Repeat("; native comment\r\n", 600)) + "mode=tcp\r\ntcp=80\r\nudp=53\r\n");
+        if ((await adapter.ReadGameFilterAsync(root)).Settings != new GameFilterSettings("tcp", "80", "53"))
+            throw new Exception("Native settings with comments over 8192 bytes must remain readable");
+        File.Delete(flag);
+        Console.WriteLine("PASS native settings with many ignored comments remain readable");
+    }
+
+    private sealed class FailReadBack : ICommandRunner
+    {
+        private int exports;
+        public Task<CommandResult> RunAsync(string executable, params string[] arguments) => ++exports == 2
+            ? Task.FromException<CommandResult>(new IOException("Injected native readback failure"))
+            : new ProcessRunner().RunAsync(executable, arguments);
     }
 }
