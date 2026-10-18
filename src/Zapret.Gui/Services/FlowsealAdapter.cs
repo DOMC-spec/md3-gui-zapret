@@ -18,6 +18,8 @@ public interface IFlowsealAdapter
     Task<FlowsealActionResult> ExecuteAsync(FlowsealActionRequest request);
     Task<ManualSessionSnapshot> ReadManualSessionAsync() => Task.FromResult(new ManualSessionSnapshot());
     Task<InterruptedOperationSnapshot> ReadInterruptedOperationAsync(string root) => Task.FromResult(new InterruptedOperationSnapshot());
+    Task<GameFilterSnapshot> ReadGameFilterAsync(string root) => throw new NotSupportedException("Настройки Game Filter недоступны.");
+    Task<GameFilterSnapshot> SaveGameFilterAsync(string root, GameFilterSettings settings, string revision) => throw new NotSupportedException("Сохранение Game Filter недоступно.");
 }
 
 /// <summary>GUI boundary for Flowseal inspection and guarded transactional service installation.</summary>
@@ -38,6 +40,9 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
             ? capability with { Available = description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)
                 && description.MissingComponents.Count == 0 && description.PathIssue == null,
                 Reason = "Подготовка Flowseal 1.10.3 и установка службы с восстановлением; требуется предварительная проверка снимка. Реальная приёмка на отдельной Windows ещё не завершена." }
+            : capability.Action == FlowsealAction.ChangeGameFilter ? capability with {
+                Available = description.ServiceScriptVerified && ServiceOwnershipCheck.TryProvePath(Path.Combine(description.Root, "utils"), out _),
+                Reason = "Настройки сохраняются в формате Flowseal 1.10.3. Работающий процесс не изменяется; для применения нужен новый пробный запуск или переустановка автозапуска." }
             : capability.Action == FlowsealAction.ManualStart ? capability with {
                 Available = (readServiceState == null || (mutationBackend != null && manualBackend != null))
                     && description.ServiceScriptVerified && description.Strategies.Any(s => s.Verified)

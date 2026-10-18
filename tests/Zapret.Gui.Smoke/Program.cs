@@ -20,6 +20,12 @@ internal static class Program
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
+            if (args.Contains("--game-filter-only"))
+            {
+                GameFilterPresentationChecks.Run(Complete);
+                app.Dispatcher.InvokeShutdown();
+                return 0;
+            }
             if (args.Contains("--manual-presentation-only"))
             {
                 ManualPresentationChecks.Run(Complete);
@@ -35,6 +41,7 @@ internal static class Program
             ServiceControlPresentationChecks.Run(Complete);
             ManualPresentationChecks.Run(Complete);
             InterruptedPresentationChecks.Run(Complete);
+            GameFilterPresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
@@ -65,12 +72,15 @@ internal static class Program
             grid.Measure(new Size(width, height));
             grid.Arrange(new Rect(0, 0, width, height));
             grid.UpdateLayout();
-            // Build both tabs to catch deferred StaticResource and binding errors.
+            // Build all tabs to catch deferred StaticResource and binding errors.
             var tabs = Find<TabControl>(grid) ?? throw new Exception("Tab control missing");
             tabs.SelectedIndex = 1;
             grid.UpdateLayout();
+            tabs.SelectedIndex = 2;
+            grid.UpdateLayout();
             tabs.SelectedIndex = 0;
-            if (args.Contains("--lists")) tabs.SelectedIndex = 1;
+            if (args.Contains("--lists")) tabs.SelectedIndex = 2;
+            if (args.Contains("--game-filter")) tabs.SelectedIndex = 1;
             grid.UpdateLayout();
             if (args.Contains("--manual-view"))
             {

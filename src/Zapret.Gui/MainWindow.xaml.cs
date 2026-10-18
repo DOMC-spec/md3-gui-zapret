@@ -43,7 +43,7 @@ public partial class MainWindow : Window
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (Model.IsBusy) { e.Cancel = true; return; }
-        if (Model.IsDirty && MessageBox.Show(this, "Закрыть окно без сохранения изменений списка?", "Несохранённые изменения",
+        if (Model.HasUnsavedChanges && MessageBox.Show(this, "Закрыть окно без сохранения изменений списка или Game Filter?", "Несохранённые изменения",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             e.Cancel = true;
         if (e.Cancel) return;

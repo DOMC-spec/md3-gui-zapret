@@ -94,6 +94,11 @@ public sealed partial class FlowsealAdapter
         var observed = Observe(request);
         if (observed.Files != input.Files || !SameObservation(input.State, observed.State))
             throw new ServiceConflictException("Исходные файлы изменились перед подготовкой.");
+        return ExportFrozenGameFilter(source, settings);
+    }
+
+    private CommandResult ExportFrozenGameFilter(Stream source, Stream? settings)
+    {
         var stage = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "Zapret.Flowseal.Prepare." + Guid.NewGuid().ToString("N")));
         if (stage.Any(c => c > 127 || "&|<>^%!\"\r\n".Contains(c)))
             throw new IOException("Временная папка не подходит для безопасного вызова CMD. Используйте локальный ASCII-путь TEMP.");

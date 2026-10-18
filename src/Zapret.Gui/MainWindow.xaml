@@ -150,6 +150,34 @@
      </StackPanel>
     </ScrollViewer>
    </TabItem>
+   <TabItem AutomationProperties.Name="Game Filter и порты">
+    <TabItem.Header>
+     <StackPanel><md:PackIcon Kind="GamepadVariantOutline" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+      <TextBlock Text="Game Filter" HorizontalAlignment="Center"/></StackPanel>
+    </TabItem.Header>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="0,0,12,0">
+      <TextBlock Text="Game Filter и порты" Style="{StaticResource M3.Title}"/>
+      <TextBlock Text="{Binding GameFilterObserved}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,8,0,8"/>
+      <Button Content="Прочитать настройки" Command="{Binding LoadGameFilterCommand}" Style="{StaticResource M3.TonalButton}" HorizontalAlignment="Left"/>
+      <StackPanel IsEnabled="{Binding CanEditGameFilter}" Margin="0,12,0,0">
+       <TextBlock Text="Режим фильтра" Style="{StaticResource M3.Label}" Margin="0,0,0,6"/>
+       <ComboBox ItemsSource="{Binding GameModes}" DisplayMemberPath="Name" SelectedValuePath="Value" SelectedValue="{Binding GameMode}" Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Режим Game Filter"/>
+       <TextBlock Text="Порты TCP" Style="{StaticResource M3.Label}" Margin="0,16,0,6"/>
+       <TextBox Text="{Binding GameTcpRange, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}" AutomationProperties.Name="Порты TCP"/>
+       <TextBlock Text="Порты UDP" Style="{StaticResource M3.Label}" Margin="0,16,0,6"/>
+       <TextBox Text="{Binding GameUdpRange, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}" AutomationProperties.Name="Порты UDP"/>
+      </StackPanel>
+      <TextBlock Text="Порты 1–65535, диапазоны через запятую, например 1024-1934,1936-65535. Пробелы удаляются. Оба диапазона сохраняются, в том числе для отключённого протокола." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,12,0,12"/>
+      <WrapPanel>
+       <Button Content="Сохранить настройки" Command="{Binding SaveGameFilterCommand}" Style="{StaticResource M3.FilledButton}" Margin="0,0,8,8"/>
+       <Button Content="Отменить правки фильтра" Command="{Binding DiscardGameFilterCommand}" Style="{StaticResource M3.Button}" Margin="0,0,0,8"/>
+      </WrapPanel>
+      <TextBlock Text="Есть несохранённые изменения" Visibility="{Binding IsGameFilterDirty, Converter={StaticResource BoolVisibility}}" Style="{StaticResource M3.Label}" Margin="0,4,0,8"/>
+      <TextBlock Text="{Binding GameFilterMessage}" Style="{StaticResource M3.Body}" TextWrapping="Wrap"/>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
    <TabItem AutomationProperties.Name="Списки доменов">
     <TabItem.Header>
      <StackPanel><md:PackIcon Kind="FormatListBulleted" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>

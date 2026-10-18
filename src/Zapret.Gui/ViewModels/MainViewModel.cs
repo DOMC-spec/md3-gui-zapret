@@ -89,6 +89,7 @@ public partial class MainViewModel : ObservableObject
     private bool CanStopManual() => !IsBusy && HasManualSession;
     private void NotifyManualControls()
     {
+        NotifyGameFilter();
         OnPropertyChanged(nameof(CanChooseDistribution));
         OnPropertyChanged(nameof(CanEditLists));
         StartManualCommand.NotifyCanExecuteChanged();
@@ -144,7 +145,11 @@ public partial class MainViewModel : ObservableObject
         CheckActionCommand.NotifyCanExecuteChanged();
         StartManualCommand.NotifyCanExecuteChanged();
     }
-    partial void OnHostlistTextChanged(string value) => OnPropertyChanged(nameof(IsDirty));
+    partial void OnHostlistTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
     partial void OnIsDarkChanged(bool value) => M3Theme.Apply(value);
 
     public async Task InitializeAsync() => await RefreshAsync();
@@ -201,6 +206,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (HasManualSession) throw new IOException("Сначала завершите свой пробный сеанс перед сменой поставки.");
         if (IsDirty) throw new IOException("Сохраните или отмените изменения списка перед выбором другой поставки.");
+        if (IsGameFilterDirty) throw new IOException("Сохраните или отмените изменения Game Filter перед выбором другой поставки.");
+        ResetGameFilter();
         Distribution = null;
         Presets.Clear();
         Hostlists.Clear();
@@ -259,7 +266,7 @@ public partial class MainViewModel : ObservableObject
             succeeded = result.Outcome == FlowsealActionOutcome.Success;
             if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
         });
-        if (succeeded && CloseAfterApply && !IsDirty) CloseRequested?.Invoke(this, EventArgs.Empty);
+        if (succeeded && CloseAfterApply && !HasUnsavedChanges) CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand(CanExecute = nameof(CanRemove))]
