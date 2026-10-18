@@ -42,6 +42,13 @@ public partial class MainViewModel
         OnPropertyChanged(nameof(ListUsage));
         OnPropertyChanged(nameof(ListTargetName));
     }
+    private void NotifyDomainListControls()
+    {
+        CompareHostlistCommand.NotifyCanExecuteChanged();
+        UseComparedHostlistCommand.NotifyCanExecuteChanged();
+        SaveComparedDraftCommand.NotifyCanExecuteChanged();
+        ExportHostlistCommand.NotifyCanExecuteChanged();
+    }
     partial void OnSelectedHostlistChanged(HostlistItem? value) => NotifyListDescription();
     partial void OnDomainChanged(string value) { OnPropertyChanged(nameof(IsDirty)); OnPropertyChanged(nameof(HasUnsavedChanges)); }
 
@@ -49,7 +56,7 @@ public partial class MainViewModel
     private Task LoadHostlistAsync() => PerformAsync(async () =>
     {
         if (SelectedHostlist == null) throw new IOException("Сначала выберите список.");
-        if (IsDirty) throw new IOException("Сначала сохраните текущий список, сохраните черновик отдельно или отмените изменения.");
+        if (IsDirty) throw new IOException("Сохраните текущий список или отмените изменения. Перед отменой можно сохранить черновик отдельно.");
         ShowList(await adapter.ReadDomainListAsync(Root, SelectedHostlist.Path));
     });
 

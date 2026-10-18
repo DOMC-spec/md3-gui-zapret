@@ -66,6 +66,11 @@ internal static class Program
             var viewModel = new MainViewModel(adapter, selectedRoot);
             window.DataContext = viewModel;
             Complete(viewModel.InitializeAsync());
+            if (args.Contains("--lists") && viewModel.Hostlists.Count != 0)
+            {
+                viewModel.SelectedHostlist = viewModel.Hostlists.FirstOrDefault(list => list.Path.EndsWith("list-general-user.txt")) ?? viewModel.Hostlists[0];
+                Complete(viewModel.LoadHostlistCommand.ExecuteAsync(null));
+            }
             if (args.Contains("--game-filter")) Complete(viewModel.LoadGameFilterCommand.ExecuteAsync(null));
             if (args.Contains("--error")) viewModel.Error = "Не найден bin\\winws.exe. Поместите конфигуратор в корневую папку zapret.";
             if (args.Contains("--dark")) viewModel.IsDark = true;
@@ -90,6 +95,12 @@ internal static class Program
             if (args.Contains("--lists")) tabs.SelectedIndex = 2;
             if (args.Contains("--game-filter")) tabs.SelectedIndex = 1;
             grid.UpdateLayout();
+            if (args.Contains("--lists") && viewModel.HasLoadedHostlist)
+            {
+                var compare = Find<Button>(grid, button => ReferenceEquals(button.Command, viewModel.CompareHostlistCommand))
+                    ?? throw new Exception("Reread list button missing");
+                if (!compare.IsEnabled) throw new Exception("Reread list button must become enabled after loading finishes");
+            }
             if (args.Contains("--manual-view"))
             {
                 var button = Find<Button>(grid, b => ReferenceEquals(b.Command, viewModel.StartManualCommand))
@@ -105,6 +116,20 @@ internal static class Program
                 for (DependencyObject? parent = button; parent != null; parent = VisualTreeHelper.GetParent(parent))
                     if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
                 grid.UpdateLayout();
+            }
+            if (args.Contains("--lists-advanced"))
+            {
+                var editor = Find<Expander>(grid, expander => Equals(expander.Header, "Расширенный режим: файл и текст"))
+                    ?? throw new Exception("Advanced list editor missing");
+                editor.IsExpanded = true;
+                Complete(Task.Delay(350)); // Let the theme's expansion animation finish before rendering.
+                grid.UpdateLayout();
+                for (DependencyObject? parent = editor; parent != null; parent = VisualTreeHelper.GetParent(parent))
+                    if (parent is ScrollViewer viewer) { viewer.ScrollToBottom(); break; }
+                grid.UpdateLayout();
+                var text = Find<TextBox>(editor, box => System.Windows.Automation.AutomationProperties.GetName(box) == "Черновик списка доменов")
+                    ?? throw new Exception("Advanced list text box missing");
+                if (text.ActualHeight < 100) throw new Exception("Expanded list editor must be laid out and visible");
             }
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             var visual = new DrawingVisual();

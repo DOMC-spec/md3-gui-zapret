@@ -70,6 +70,18 @@ static class DomainListPresentationChecks
 
     private static async Task CheckAdapter(string root, IFlowsealAdapter adapter)
     {
+        var optional = Path.Combine(root, "lists", "list-general-user.txt");
+        var originalOptional = File.ReadAllBytes(optional);
+        File.Delete(optional);
+        try
+        {
+            var missing = await adapter.ReadDomainListAsync(root, optional);
+            try { await adapter.SaveDomainListAsync(root, missing, "\uD800"); throw new Exception("Unencodable text accepted"); }
+            catch (IOException) { }
+            if (File.ReadAllText(optional) != "# Never leave this file empty\r\ndomain.example.abc\r\n")
+                throw new Exception("Failure after initial creation must leave native seed, never an empty user list");
+        }
+        finally { File.WriteAllBytes(optional, originalOptional); }
         var path = Path.Combine(root, "lists", "list-extra.txt");
         foreach (var encoding in new System.Text.Encoding[] { new System.Text.UTF8Encoding(true), new System.Text.UTF8Encoding(false),
             new System.Text.UnicodeEncoding(false, true), new System.Text.UnicodeEncoding(true, true), new System.Text.UTF32Encoding(false, true) })

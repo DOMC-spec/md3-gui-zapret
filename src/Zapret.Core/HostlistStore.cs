@@ -58,7 +58,7 @@ public sealed class HostlistStore(string root)
             if (original.Revision != "missing") throw Conflict();
             if (!IsOptionalUserList(path)) throw new IOException("Создание разрешено только для штатных пользовательских списков.");
             using var created = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-            return WriteWithRollback(created, text, new UTF8Encoding(false, true), [], null);
+            return WriteWithRollback(created, text, new UTF8Encoding(false, true), Encoding.ASCII.GetBytes(UserListSeeds[Path.GetFileName(path)]), null);
         }
         using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var bytes = ReadBytes(file);
@@ -71,21 +71,21 @@ public sealed class HostlistStore(string root)
 
         HostlistSnapshot WriteWithRollback(FileStream target, string content, Encoding encoding, byte[] before, string? backup)
         {
-            var encoded = encoding.GetPreamble().Concat(encoding.GetBytes(content)).ToArray();
             try
             {
+                var encoded = encoding.GetPreamble().Concat(encoding.GetBytes(content)).ToArray();
                 Write(encoded);
                 var actual = ReadBytes(target);
                 if (!actual.SequenceEqual(encoded)) throw new IOException("Перечитывание списка не подтвердило запись.");
                 return new(path, content, Revision(actual));
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or EncoderFallbackException)
             {
                 try { Write(before); }
                 catch (Exception recovery) when (recovery is IOException or UnauthorizedAccessException)
                 { throw new IOException("Возврат списка не подтверждён. Резервная копия: " + (backup ?? "прежде файл отсутствовал") + ". " + recovery.Message, error); }
                 throw new IOException("Список не сохранён; прежние байты возвращены. "
-                    + (backup == null ? "Прежде файл отсутствовал; оставлен пустой пользовательский список. " : "Резервная копия: " + backup + ". ") + error.Message, error);
+                    + (backup == null ? "Прежде файл отсутствовал; оставлено штатное начальное содержимое Flowseal. " : "Резервная копия: " + backup + ". ") + error.Message, error);
             }
             void Write(byte[] value) { target.Position = 0; target.Write(value); target.SetLength(value.Length); target.Flush(true); target.Position = 0; }
         }

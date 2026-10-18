@@ -89,6 +89,7 @@ public partial class MainViewModel : ObservableObject
     private bool CanStopManual() => !IsBusy && HasManualSession;
     private void NotifyManualControls()
     {
+        NotifyDomainListControls();
         NotifyGameFilter();
         OnPropertyChanged(nameof(CanChooseDistribution));
         OnPropertyChanged(nameof(CanEditLists));
