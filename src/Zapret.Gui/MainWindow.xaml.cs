@@ -40,6 +40,15 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog(this) == true) await Model.SelectDistributionCommand.ExecuteAsync(dialog.FolderName);
     }
+    private async void OnExportList(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Сохранить черновик в новый файл вне поставки",
+            Filter = "Текстовый файл (*.txt)|*.txt", FileName = "my-list-draft.txt"
+        };
+        if (dialog.ShowDialog(this) == true) await Model.ExportHostlistCommand.ExecuteAsync(dialog.FileName);
+    }
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (Model.IsBusy) { e.Cancel = true; return; }

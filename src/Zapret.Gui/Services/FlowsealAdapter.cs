@@ -20,6 +20,10 @@ public interface IFlowsealAdapter
     Task<InterruptedOperationSnapshot> ReadInterruptedOperationAsync(string root) => Task.FromResult(new InterruptedOperationSnapshot());
     Task<GameFilterSnapshot> ReadGameFilterAsync(string root) => throw new NotSupportedException("Настройки Game Filter недоступны.");
     Task<GameFilterSnapshot> SaveGameFilterAsync(string root, GameFilterSettings settings, string revision) => throw new NotSupportedException("Сохранение Game Filter недоступно.");
+    Task<IReadOnlyList<DomainListDescription>> ReadDomainListsAsync(string root, Preset? strategy) => Task.FromResult<IReadOnlyList<DomainListDescription>>([]);
+    Task<HostlistSnapshot> ReadDomainListAsync(string root, string path) => throw new NotSupportedException("Чтение списков недоступно.");
+    Task<HostlistSnapshot> SaveDomainListAsync(string root, HostlistSnapshot original, string text) => throw new NotSupportedException("Сохранение списков недоступно.");
+    Task ExportDomainListAsync(string root, string path, string text) => throw new NotSupportedException("Экспорт черновика недоступен.");
 }
 
 /// <summary>GUI boundary for Flowseal inspection and guarded transactional service installation.</summary>

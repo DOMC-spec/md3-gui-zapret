@@ -20,6 +20,12 @@ internal static class Program
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
             M3Theme.Apply(false);
+            if (args.Contains("--domain-lists-only"))
+            {
+                DomainListPresentationChecks.Run(Complete);
+                app.Dispatcher.InvokeShutdown();
+                return 0;
+            }
             if (args.Contains("--game-filter-only"))
             {
                 GameFilterPresentationChecks.Run(Complete);
@@ -42,6 +48,7 @@ internal static class Program
             ManualPresentationChecks.Run(Complete);
             InterruptedPresentationChecks.Run(Complete);
             GameFilterPresentationChecks.Run(Complete);
+            DomainListPresentationChecks.Run(Complete);
             var window = new MainWindow();
             var selectedRoot = args.FirstOrDefault(a => a.StartsWith("--distribution="))?["--distribution=".Length..]
                 ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "flowseal-1.10.3");
@@ -176,6 +183,7 @@ internal static class Program
             File.WriteAllText(Path.Combine(second, "lists", "list-general.txt"), "second.example\n");
             var model = new MainViewModel(ReadOnlyAdapter(), first);
             Complete(model.InitializeAsync());
+            model.SelectedHostlist = model.Hostlists.Single(list => list.Path.EndsWith("list-general.txt"));
             Complete(model.LoadHostlistCommand.ExecuteAsync(null));
             model.HostlistText = "unsaved.example\n";
             Complete(model.SelectDistributionCommand.ExecuteAsync(second));
@@ -183,8 +191,9 @@ internal static class Program
                 throw new Exception("Choosing a folder must preserve unsaved list changes");
             model.DiscardChangesCommand.Execute(null);
             Complete(model.SelectDistributionCommand.ExecuteAsync(second));
-            if (model.Root != second || model.HasLoadedHostlist || model.HostlistText != "" || model.Hostlists.Single().Path != Path.Combine(second, "lists", "list-general.txt"))
+            if (model.Root != second || model.HasLoadedHostlist || model.HostlistText != "" || !model.Hostlists.Any(list => list.Path == Path.Combine(second, "lists", "list-general.txt")))
                 throw new Exception("Choosing a new folder must reset the loaded editor and discover only its lists");
+            model.SelectedHostlist = model.Hostlists.Single(list => list.Path.EndsWith("list-general.txt"));
             Complete(model.LoadHostlistCommand.ExecuteAsync(null));
             if (model.HostlistText != "second.example\n") throw new Exception("Newly loaded list must come from selected distribution");
             model.Notifications.Dispose();

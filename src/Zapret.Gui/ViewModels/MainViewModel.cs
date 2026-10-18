@@ -25,7 +25,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<Preset> Presets { get; } = [];
     public ObservableCollection<HostlistItem> Hostlists { get; } = [];
     public SnackbarMessageQueue Notifications { get; } = new(TimeSpan.FromSeconds(3));
-    private HostlistStore Store => new(Root);
+
     private string originalText = "";
     private string? loadedPath;
 
@@ -116,7 +116,7 @@ public partial class MainViewModel : ObservableObject
         NotifyManualControls();
     }
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
-    public bool IsDirty => loadedPath != null && HostlistText != originalText;
+    public bool IsDirty => loadedPath != null && (HostlistText != originalText || Domain.Length != 0);
     public bool HasLoadedHostlist => loadedPath != null;
     public string LoadedFileName => loadedPath == null ? "Список не открыт" : System.IO.Path.GetRelativePath(Root, loadedPath);
     public string FileSummary => $"Найдено стратегий: {Presets.Count} · списков: {Hostlists.Count}";
@@ -138,6 +138,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnSelectedPresetChanged(Preset? value)
     {
+        if (!IsBusy) _ = RefreshDomainListsAsync();
         installReady = false;
         ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(StrategyReadiness));
@@ -214,6 +215,10 @@ public partial class MainViewModel : ObservableObject
         Root = path;
         loadedPath = null;
         originalText = "";
+        listSnapshot = null;
+        ObservedListText = "";
+        comparedList = null;
+        HasListComparison = false;
         HostlistText = "";
         SelectedHostlist = null;
         SelectedPreset = null;
@@ -233,15 +238,12 @@ public partial class MainViewModel : ObservableObject
         Presets.Clear();
         foreach (var strategy in Distribution.Strategies) Presets.Add(strategy.Preset);
         SelectedPreset = Presets.FirstOrDefault(p => p.Name == name) ?? Presets.FirstOrDefault();
+        await RefreshDomainListsAsync();
         if (!IsDirty)
         {
             var path = SelectedHostlist?.Path;
-            IReadOnlyList<string> lists = [];
-            try { if (Directory.Exists(Root)) lists = await Task.Run(Store.Discover); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            { Error = "Списки прочитать не удалось. " + ex.Message; }
             Hostlists.Clear();
-            foreach (var file in lists) Hostlists.Add(new HostlistItem(file, System.IO.Path.GetRelativePath(Root, file)));
+            foreach (var list in domainLists) Hostlists.Add(new HostlistItem(list.Path, list.Name));
             SelectedHostlist = Hostlists.FirstOrDefault(p => p.Path == path) ?? Hostlists.FirstOrDefault();
         }
         OnPropertyChanged(nameof(FileSummary));
@@ -391,51 +393,7 @@ public partial class MainViewModel : ObservableObject
             new[] { result.ApplyError, result.Explanation, result.RecoveryExplanation, result.NextStep }
                 .Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
     }
-    [RelayCommand(CanExecute = nameof(CanInteract))]
-    private async Task LoadHostlistAsync() => await PerformAsync(async () =>
-    {
-        if (SelectedHostlist == null) throw new IOException("Сначала выберите список.");
-        if (IsDirty) throw new IOException("Сначала сохраните текущий список или отмените изменения.");
-        var text = await Store.ReadAsync(SelectedHostlist.Path);
-        loadedPath = SelectedHostlist.Path;
-        originalText = text;
-        HostlistText = text;
-        OnPropertyChanged(nameof(IsDirty));
-        OnPropertyChanged(nameof(HasLoadedHostlist));
-        OnPropertyChanged(nameof(LoadedFileName));
-    });
 
-    [RelayCommand(CanExecute = nameof(CanEditLists))]
-    private async Task SaveHostlistAsync() => await PerformAsync(async () =>
-    {
-        if (!Allows(FlowsealAction.EditLists)) throw new IOException(Unavailable(FlowsealAction.EditLists));
-        if (loadedPath == null) throw new IOException("Откройте список для редактирования.");
-        await Store.SaveAsync(loadedPath, HostlistText, originalText);
-        originalText = HostlistText;
-        OnPropertyChanged(nameof(IsDirty));
-        Notifications.Enqueue("Список сохранён. Для работающей службы примените стратегию заново.");
-    });
-
-    [RelayCommand(CanExecute = nameof(CanEditLists))]
-    private async Task AddDomainAsync() => await PerformAsync(async () =>
-    {
-        if (!Allows(FlowsealAction.EditLists)) throw new IOException(Unavailable(FlowsealAction.EditLists));
-        if (loadedPath == null) throw new IOException("Откройте список для редактирования.");
-        var updated = HostlistStore.AddDomain(HostlistText, Domain);
-        await Store.SaveAsync(loadedPath, updated, originalText);
-        originalText = updated;
-        HostlistText = updated;
-        Domain = "";
-        OnPropertyChanged(nameof(IsDirty));
-        Notifications.Enqueue("Домен добавлен, список сохранён");
-    });
-
-    [RelayCommand]
-    private void DiscardChanges()
-    {
-        HostlistText = originalText;
-        OnPropertyChanged(nameof(IsDirty));
-    }
 }
 
 public sealed record HostlistItem(string Path, string Name);

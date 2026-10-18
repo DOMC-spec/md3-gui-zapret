@@ -5,12 +5,7 @@ namespace Zapret.Gui.Services;
 
 public sealed partial class FlowsealAdapter
 {
-    private static readonly IReadOnlyDictionary<string, string> UserListSeeds = new Dictionary<string, string>
-    {
-        ["ipset-exclude-user.txt"] = "203.0.113.113/32\r\n",
-        ["list-general-user.txt"] = "# Never leave this file empty\r\ndomain.example.abc\r\n",
-        ["list-exclude-user.txt"] = "domain.example.abc\r\n"
-    };
+    private static IReadOnlyDictionary<string, string> UserListSeeds => HostlistStore.UserListSeeds;
 
     private static bool CanInitializeUserList(string root, string path) =>
         UserListSeeds.Keys.Any(name => Path.Combine(root, "lists", name).Equals(path, StringComparison.OrdinalIgnoreCase))

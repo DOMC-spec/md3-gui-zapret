@@ -183,58 +183,52 @@
      <StackPanel><md:PackIcon Kind="FormatListBulleted" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4"/>
       <TextBlock Text="Списки доменов" HorizontalAlignment="Center"/></StackPanel>
     </TabItem.Header>
-    <Grid>
-     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-     </Grid.RowDefinitions>
-     <StackPanel Margin="0,0,0,20">
-      <TextBlock Text="Домены и исключения" Style="{StaticResource M3.Title}"/>
-      <TextBlock Text="Редактируйте список или добавьте отдельный домен." Style="{StaticResource M3.Supporting}" Margin="0,4,0,0"/>
-     </StackPanel>
-     <Grid Grid.Row="1" Margin="0,0,0,16">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="0,0,12,0">
+      <TextBlock Text="Сайты и исключения" Style="{StaticResource M3.Title}"/>
+      <TextBlock Text="Выберите назначение списка, откройте его и добавьте домен." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,6,0,16"/>
       <Grid>
-       <ComboBox ItemsSource="{Binding Hostlists}" SelectedItem="{Binding SelectedHostlist}" DisplayMemberPath="Name"
-        Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Файл списка"/>
-       <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
-        <TextBlock Text="Файл списка" Style="{StaticResource M3.Label}"/>
-       </Border>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <ComboBox ItemsSource="{Binding Hostlists}" SelectedItem="{Binding SelectedHostlist}" DisplayMemberPath="Name" Style="{StaticResource M3.ComboBox}" AutomationProperties.Name="Назначение списка"/>
+       <Button Grid.Column="1" Content="Открыть" Command="{Binding LoadHostlistCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0"/>
       </Grid>
-      <Button Grid.Column="1" Content="Открыть" Command="{Binding LoadHostlistCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0" VerticalAlignment="Center"/>
-     </Grid>
-     <Grid Grid.Row="2" MinHeight="100">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-      <TextBlock Text="{Binding LoadedFileName}" Style="{StaticResource M3.Label}" Margin="0,0,0,8"/>
-      <Border Grid.Row="1" CornerRadius="4" BorderBrush="{DynamicResource M3.Outline}" BorderThickness="1"
-       Background="{DynamicResource M3.SurfaceContainerLowest}" Padding="12">
-       <TextBox Text="{Binding HostlistText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding HasLoadedHostlist}"
-        AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-        FontFamily="Consolas" FontSize="14" FontWeight="Normal" Padding="0" BorderThickness="0" Background="Transparent"
-        Foreground="{DynamicResource M3.OnSurface}" md:TextFieldAssist.DecorationVisibility="Hidden"
-        AutomationProperties.Name="Содержимое списка доменов"/>
-      </Border>
-     </Grid>
-     <Grid Grid.Row="3" Margin="0,20,0,8">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <Grid>
-       <TextBox Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}"
-        AutomationProperties.Name="Добавить домен"/>
-       <Border Background="{DynamicResource M3.Surface}" Padding="4,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,-8,0,0" IsHitTestVisible="False">
-        <TextBlock Text="Домен, например example.org" Style="{StaticResource M3.Label}"/>
-       </Border>
+      <TextBlock Text="{Binding ListTargetName}" Style="{StaticResource M3.Title}" Margin="0,16,0,6"/>
+      <TextBlock Text="{Binding ListPurpose}" Style="{StaticResource M3.Supporting}" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding ListUsage}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,8,0,12"/>
+      <Grid IsEnabled="{Binding HasLoadedHostlist}">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <TextBox Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource M3.TextField}" AutomationProperties.Name="Сайт или исключение, домен без адреса и пути"/>
+       <Button Grid.Column="1" Content="Добавить и сохранить" Command="{Binding AddDomainCommand}" Style="{StaticResource M3.FilledButton}" Margin="12,0,0,0"/>
       </Grid>
-      <Button Grid.Column="1" Content="Добавить" Command="{Binding AddDomainCommand}" Style="{StaticResource M3.TonalButton}" Margin="12,0,0,0" VerticalAlignment="Center"/>
-     </Grid>
-     <DockPanel Grid.Row="4">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-       <Button Content="Отменить правки" Command="{Binding DiscardChangesCommand}" Style="{StaticResource M3.Button}"/>
-       <Button Content="Сохранить" Command="{Binding SaveHostlistCommand}" Style="{StaticResource M3.FilledButton}" Margin="8,0,0,0"/>
+      <TextBlock Text="Например example.org или пример.рф, без https:// и пути." Style="{StaticResource M3.Supporting}" TextWrapping="Wrap" Margin="0,6,0,12"/>
+      <TextBlock Text="{Binding ListMessage}" Style="{StaticResource M3.Body}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+      <WrapPanel>
+       <Button Content="Перечитать для сравнения" Command="{Binding CompareHostlistCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,8,8"/>
+       <Button Content="Сохранить свои правки отдельно" Click="OnExportList" IsEnabled="{Binding HasLoadedHostlist}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"/>
+      </WrapPanel>
+      <Expander Header="Расширенный режим: файл и текст" Margin="0,8,0,12">
+       <StackPanel>
+        <TextBlock Text="{Binding LoadedFileName}" Style="{StaticResource M3.Label}" TextWrapping="Wrap" Margin="0,8,0,8"/>
+        <TextBox Text="{Binding HostlistText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding HasLoadedHostlist}"
+         AcceptsReturn="True" AcceptsTab="True" MinHeight="140" MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+         FontFamily="Consolas" FontSize="14" AutomationProperties.Name="Черновик списка доменов"/>
+        <WrapPanel Margin="0,12,0,0">
+         <Button Content="Сохранить текст" Command="{Binding SaveHostlistCommand}" Style="{StaticResource M3.FilledButton}" Margin="0,0,8,8"/>
+         <Button Content="Отменить правки" Command="{Binding DiscardChangesCommand}" Style="{StaticResource M3.Button}" Margin="0,0,0,8"/>
+        </WrapPanel>
+       </StackPanel>
+      </Expander>
+      <TextBlock Text="Есть несохранённые изменения" Style="{StaticResource M3.Label}" Visibility="{Binding IsDirty, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,8"/>
+      <StackPanel Visibility="{Binding HasListComparison, Converter={StaticResource BoolVisibility}}">
+       <TextBlock Text="Последнее чтение файла (для сравнения)" Style="{StaticResource M3.Label}" Margin="0,0,0,8"/>
+       <TextBox Text="{Binding ObservedListText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" MinHeight="100" MaxHeight="180" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Внешняя версия списка"/>
+       <WrapPanel Margin="0,12,0,0">
+        <Button Content="Заменить черновик прочитанным" Command="{Binding UseComparedHostlistCommand}" Style="{StaticResource M3.Button}" Margin="0,0,8,8"/>
+        <Button Content="Сохранить мои правки поверх прочитанного" Command="{Binding SaveComparedDraftCommand}" Style="{StaticResource M3.TonalButton}" Margin="0,0,0,8"/>
+       </WrapPanel>
       </StackPanel>
-      <TextBlock Text="Есть изменения" Style="{StaticResource M3.Label}" VerticalAlignment="Center"
-       Visibility="{Binding IsDirty, Converter={StaticResource BoolVisibility}}"/>
-     </DockPanel>
-    </Grid>
+     </StackPanel>
+    </ScrollViewer>
    </TabItem>
   </TabControl>
 
