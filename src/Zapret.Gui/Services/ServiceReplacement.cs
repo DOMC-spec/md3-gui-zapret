@@ -58,7 +58,7 @@ public sealed partial class FlowsealAdapter
             var recovery = applyError is ServiceConflictException
                 ? (FlowsealRecoveryOutcome.Conflict, SafeRead(), "Обнаруженное стороннее изменение сохранено; автоматическое восстановление прекращено.")
                 : changed ? Recover() : (FlowsealRecoveryOutcome.NotNeeded, SafeRead(), "Изменения не начаты.");
-            return new(FlowsealActionOutcome.ApplyFailed, recovery.Item2, "Не удалось применить стратегию автозапуска.",
+            return new(FlowsealActionOutcome.ApplyFailed, recovery.Item2, "Не удалось применить стратегию автозапуска. " + ExplainFailure(applyError),
                 recovery.Item1, applyError.Message, recovery.Item3,
                 recovery.Item1 == FlowsealRecoveryOutcome.Restored
                     ? "Прежнее состояние восстановлено. Проверьте причину ошибки перед повторной попыткой."
@@ -117,7 +117,7 @@ public sealed partial class FlowsealAdapter
                 var observed = Observe(request);
                 if (observed.Files != input.Files || !SameEntry(observed.State, running))
                     throw new ServiceConflictException("При проверке работы изменились файлы или конфигурация службы.");
-                if (observed.State.State != ServiceState.Running) throw new IOException("Служба завершилась вскоре после запуска.");
+                if (observed.State.State != ServiceState.Running) throw new EarlyProcessExitException("Служба завершилась вскоре после запуска.");
                 if (observed.State.Process != running.Process || observed.State.Ownership != ServiceOwnership.Owned)
                     throw new ServiceConflictException("Процесс службы изменился во время проверки работы.");
             }

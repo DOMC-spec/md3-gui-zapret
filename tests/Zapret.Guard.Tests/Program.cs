@@ -60,6 +60,11 @@ var root = Path.Combine(Path.GetTempPath(), "Zapret guard " + Guid.NewGuid());
 try
 {
     CopyReference(root);
+    if (args.Contains("--actual-state-only"))
+    {
+        await ActualStateScenarios.Run(root);
+        return;
+    }
     if (args.Contains("--game-filter-only"))
     {
         await GameFilterScenarios.Run(root);
@@ -92,6 +97,7 @@ try
     }
     if (!args.Contains("--guards-only"))
     {
+        await ActualStateScenarios.Run(root);
         await GameFilterScenarios.Run(root);
         await PreparationScenarios.Run(root);
         if (args.Contains("--review-recovery"))

@@ -55,7 +55,7 @@ public sealed partial class FlowsealAdapter
             catch (Exception readError) when (Recoverable(readError))
             { observed = new(ServiceState.Unknown, null, ObservationError: readError.Message); }
             return new(error is ServiceConflictException ? FlowsealActionOutcome.Conflict : FlowsealActionOutcome.ApplyFailed,
-                observed, "Действие со службой не подтверждено. " + error.Message, ApplyError: error.Message,
+                observed, "Действие со службой не подтверждено. " + ExplainFailure(error), ApplyError: error.Message,
                 NextStep: "Обновите состояние. При тайм-ауте Windows может ещё завершать операцию; проверьте результат перед повтором.");
         }
 

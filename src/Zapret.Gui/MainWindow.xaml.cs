@@ -8,29 +8,29 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new();
     private MainViewModel Model => (MainViewModel)DataContext;
-    private readonly System.Windows.Threading.DispatcherTimer manualTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-    private bool pollingManual;
+    private readonly System.Windows.Threading.DispatcherTimer observationTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool refreshingObservedState;
     private bool initialized;
     public MainWindow()
     {
         InitializeComponent();
         DataContext = viewModel;
         viewModel.CloseRequested += (_, _) => Close();
-        manualTimer.Tick += async (_, _) =>
+        observationTimer.Tick += async (_, _) =>
         {
-            if (pollingManual || Model.IsBusy) return;
-            pollingManual = true;
+            if (refreshingObservedState || Model.IsBusy) return;
+            refreshingObservedState = true;
             try { await Model.RefreshObservedStateAsync(); }
             catch (Exception error) { Model.Error = "Не удалось обновить пробный сеанс: " + error.Message; }
-            finally { pollingManual = false; }
+            finally { refreshingObservedState = false; }
         };
-        Closed += (_, _) => manualTimer.Stop();
+        Closed += (_, _) => observationTimer.Stop();
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         await Model.InitializeAsync();
         initialized = true;
-        manualTimer.Start();
+        observationTimer.Start();
     }
     private async void OnActivated(object? sender, EventArgs e)
     {

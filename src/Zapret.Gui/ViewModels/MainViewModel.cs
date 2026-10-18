@@ -189,7 +189,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (snapshot != observedService) installReady = false;
         observedService = snapshot;
-        if (snapshot.State != ServiceState.Unknown) observationDetails = snapshot.ObservationError ?? "";
+        if (snapshot.State != ServiceState.Unknown || snapshot.ObservationError != null) observationDetails = snapshot.ObservationError ?? "";
         if (snapshot.ObservationError != null)
             SetObservationNotice("Часть сведений о службе прочитать не удалось. Проверьте права доступа и обновите состояние; изменение службы может быть недоступно.");
         serviceOwnership = snapshot.Ownership;
@@ -277,7 +277,7 @@ public partial class MainViewModel : ObservableObject
             installReady = false;
             ActionReadiness = "Замена автозапуска… При ошибке оболочка попытается вернуть прежнюю службу. Дождитесь результата.";
             var result = await ExecuteObservedActionAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
-            succeeded = result?.Outcome == FlowsealActionOutcome.Success && CurrentState != ServiceState.Unknown && !HasInterruptedOperation;
+            succeeded = result?.Outcome == FlowsealActionOutcome.Success && CurrentState != ServiceState.Unknown && !HasInterruptedOperation && !HasError;
             if (succeeded) Notifications.Enqueue("Автозапуск установлен. Работа службы не подтверждает доступность видео или голоса.");
         });
         if (succeeded && CloseAfterApply && !HasUnsavedChanges) CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -302,11 +302,16 @@ public partial class MainViewModel : ObservableObject
         if (SelectedPreset == null) { ActionReadiness = "Сначала выберите стратегию из поставки."; return; }
         await ReadStatusAsync();
         if (CurrentState == ServiceState.Unknown) { ActionReadiness = "Состояние службы неизвестно. Обновите состояние перед проверкой действия."; return; }
-        var result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset));
+        FlowsealActionResult result;
+        try { result = await adapter.PreflightAsync(new(Root, FlowsealAction.InstallService, SelectedPreset)); }
+        catch (Exception error)
+        {
+            result = new(FlowsealActionOutcome.InvalidRequest, observedService,
+                "Предварительная проверка не завершена. Проверьте доступ к поставке и права управления службой; обновите состояние.", ApplyError: error.ToString());
+        }
+        ShowActionResult(result);
         installReady = result.Outcome == FlowsealActionOutcome.Ready;
         ApplyCommand.NotifyCanExecuteChanged();
-        ShowObservedState(result.State);
-        ActionReadiness = result.Explanation == result.State.OwnershipReason ? "Изменение службы недоступно." : result.Explanation;
     }
 
     private async Task ExecuteServiceControlAsync(FlowsealAction action)
@@ -324,7 +329,11 @@ public partial class MainViewModel : ObservableObject
 
     private async Task ReadInterruptedOperationAsync()
     {
-        try { interruptedOperation = await adapter.ReadInterruptedOperationAsync(Root); }
+        try
+        {
+            interruptedOperation = await adapter.ReadInterruptedOperationAsync(Root);
+            recoveryDetails = interruptedOperation.TechnicalDetails ?? "";
+        }
         catch (Exception error)
         {
             recoveryDetails = error.ToString();
@@ -333,6 +342,7 @@ public partial class MainViewModel : ObservableObject
         }
         HasInterruptedOperation = interruptedOperation.Pending;
         InterruptedOperationText = interruptedOperation.Explanation;
+        OnPropertyChanged(nameof(TechnicalDetails));
         if (HasInterruptedOperation) installReady = false;
         NotifyManualControls();
     }
@@ -373,6 +383,7 @@ public partial class MainViewModel : ObservableObject
         {
             manualObservationKnown = false;
             lastManualSnapshot = null;
+            ManualProcessText = "";
             operationDetails = error.ToString();
             installReady = false;
             ManualStatusText = "Состояние пробного процесса неизвестно. Обновите состояние; перед новым запуском убедитесь, что прежний процесс завершён.";
@@ -418,8 +429,7 @@ public partial class MainViewModel : ObservableObject
         ShowObservedState(result.State);
         operationDetails = string.Join("\n\n", new[] { result.Outcome.ToString(), result.Explanation, result.ApplyError,
             result.RecoveryExplanation, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)).Distinct());
-        var explanation = string.IsNullOrWhiteSpace(result.ApplyError) ? result.Explanation
-            : result.Explanation.Replace(result.ApplyError, "Технические подробности доступны ниже.");
+        var explanation = result.Explanation;
         var recovery = result.Recovery switch
         {
             FlowsealRecoveryOutcome.Restored => "Восстановление: прежнее состояние службы возвращено.",
@@ -428,10 +438,12 @@ public partial class MainViewModel : ObservableObject
             _ => "Восстановление не требовалось."
         };
         ActionReadiness = string.Join("\n\n", new[] { explanation, recovery,
-            result.NextStep ?? (result.Outcome == FlowsealActionOutcome.Success
+            result.NextStep ?? (result.Outcome == FlowsealActionOutcome.Ready
+                ? "Проверка завершена. Можно выполнить выбранное действие; перед изменением состояние будет проверено повторно."
+                : result.Outcome == FlowsealActionOutcome.Success
                 ? "Проверьте нужные функции сервисов: работа службы не подтверждает доступность видео или голоса."
                 : "Обновите состояние, проверьте поставку и права доступа перед повторной попыткой.") });
-        Error = result.Outcome == FlowsealActionOutcome.Success ? "" : string.Join("\n\n",
+        Error = result.Outcome is FlowsealActionOutcome.Success or FlowsealActionOutcome.Ready ? "" : string.Join("\n\n",
             new[] { explanation, recovery, result.NextStep }.Where(text => !string.IsNullOrWhiteSpace(text)));
         NotifyObservedState();
     }

@@ -65,6 +65,8 @@ static class ManualSessionScenarios
                 {
                     if (started.Outcome != FlowsealActionOutcome.ApplyFailed || controlled.State.State != ServiceState.Running || engine.Running)
                         throw new Exception("Failed trial must restore previously running service: " + stage + " " + started);
+                    if (stage == "early-exit" && (!started.Explanation.Contains("раньше времени") || string.IsNullOrEmpty(started.ApplyError)))
+                        throw new Exception("Early exit must retain a plain-language cause and separate diagnostics");
                 }
                 else
                 {

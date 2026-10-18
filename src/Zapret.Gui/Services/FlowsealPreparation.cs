@@ -22,7 +22,7 @@ public sealed partial class FlowsealAdapter
             try { observed = ReadStateAsync(request.Root).GetAwaiter().GetResult(); }
             catch (Exception observationError) when (Recoverable(observationError))
             { observed = new(ServiceState.Unknown, null, ObservationError: observationError.Message); }
-            return FinishRecordedOperation(new(FlowsealActionOutcome.ApplyFailed, observed, "Подготовка запуска не завершена. Оболочка не изменяла службу.",
+            return FinishRecordedOperation(new(FlowsealActionOutcome.ApplyFailed, observed, "Подготовка запуска не завершена. Оболочка не изменяла службу. " + ExplainFailure(error),
                 error is ServiceConflictException ? FlowsealRecoveryOutcome.Conflict : FlowsealRecoveryOutcome.NotNeeded,
                 error.Message, "Восстановление службы не требовалось: остановка и замена ещё не начинались.",
                 "Проверьте причину и обновите состояние. Созданные пользовательские списки сохранены; TCP timestamps могли быть включены."));

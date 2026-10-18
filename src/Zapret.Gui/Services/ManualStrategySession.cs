@@ -102,7 +102,7 @@ public sealed partial class FlowsealAdapter
             {
                 CheckUnchanged();
                 var observed = process.Observe();
-                if (observed.Exited) throw new IOException("Пробная стратегия завершилась. Выход cmd сам по себе не подтверждает работу winws.");
+                if (observed.Exited) throw new EarlyProcessExitException("Пробная стратегия завершилась. Выход cmd сам по себе не подтверждает работу winws.");
                 if (observed.Process is { } found)
                 {
                     if (found.Id == 0 || found.StartedAtUtcTicks == null || found.Executable == null
@@ -119,7 +119,7 @@ public sealed partial class FlowsealAdapter
                         run.Started.TrySetResult(new(FlowsealActionOutcome.Success, expected, manualState.Explanation));
                     }
                 }
-                else if (identity != null) throw new IOException("Наблюдаемый пробный winws завершился.");
+                else if (identity != null) throw new EarlyProcessExitException("Наблюдаемый пробный winws завершился.");
                 if (stable < 4 && Environment.TickCount64 >= deadline) throw new TimeoutException("Исходный BAT не запустил наблюдаемый winws за 10 секунд.");
                 run.StopRequested.Wait(250);
             }
@@ -183,7 +183,7 @@ public sealed partial class FlowsealAdapter
         var finalState = SafeRead();
         return FinishRecordedOperation(new(failure == null ? FlowsealActionOutcome.Success
             : recovery == FlowsealRecoveryOutcome.Conflict ? FlowsealActionOutcome.Conflict : FlowsealActionOutcome.ApplyFailed,
-            finalState, failure == null ? "Пробный сеанс завершён. Обновления не проверялись." : "Пробный сеанс завершён с ошибкой: " + failure.Message,
+            finalState, failure == null ? "Пробный сеанс завершён. Обновления не проверялись." : "Пробный сеанс завершён с ошибкой. " + ExplainFailure(failure),
             recovery, failure?.Message, recoveryText,
             recovery is FlowsealRecoveryOutcome.Failed or FlowsealRecoveryOutcome.Conflict
                 ? "Обновите состояние и проверьте службу вручную. Сторонние изменения не перезаписываются."

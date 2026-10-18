@@ -11,7 +11,7 @@ public sealed record OperationRecord(string Id, FlowsealAction Action, string Ro
     ServiceSnapshot? Desired = null, ServiceSnapshot? Next = null, ServiceProcess? Trial = null,
     long UpdatedAtUtcTicks = 0, int Version = 1);
 public sealed record InterruptedOperationSnapshot(bool Pending = false, bool CanRecover = false, string? Root = null,
-    string Explanation = "Незавершённых операций нет.", ServiceSnapshot? State = null);
+    string Explanation = "Незавершённых операций нет.", ServiceSnapshot? State = null, string? TechnicalDetails = null);
 
 /// <summary>Durable system boundary. Write must complete its durable flush before returning.</summary>
 public interface IOperationJournal

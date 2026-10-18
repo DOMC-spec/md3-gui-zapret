@@ -8,7 +8,7 @@ public sealed partial class FlowsealAdapter
     {
         var inspection = InspectInterrupted(root, false);
         return new InterruptedOperationSnapshot(inspection.Pending, inspection.Result.Outcome == FlowsealActionOutcome.Ready,
-            inspection.Record?.Root, inspection.Result.Explanation, inspection.Result.State);
+                inspection.Record?.Root, inspection.Result.Explanation, inspection.Result.State, inspection.Result.ApplyError);
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private sealed record InterruptedInspection(bool Pending, OperationRecord? Record, FlowsealActionResult Result);
@@ -42,7 +42,7 @@ public sealed partial class FlowsealAdapter
         catch (Exception error) when (Recoverable(error))
         {
             return new(true, record, new(error is ServiceConflictException ? FlowsealActionOutcome.Conflict : FlowsealActionOutcome.RecoveryRequired,
-                SafeRecoveryRead(record?.Root ?? root), "Восстановление не начато или не завершено: " + error.Message,
+                SafeRecoveryRead(record?.Root ?? root), "Восстановление не начато или не завершено. " + ExplainFailure(error),
                 error is ServiceConflictException ? FlowsealRecoveryOutcome.Conflict : FlowsealRecoveryOutcome.Failed,
                 ApplyError: error.Message, NextStep: "Обновите состояние. Не перезаписывайте сторонние изменения; при неизвестном состоянии проверьте службу и журнал вручную."));
         }

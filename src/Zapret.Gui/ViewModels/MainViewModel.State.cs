@@ -21,7 +21,8 @@ public partial class MainViewModel
     public string RegisteredStrategyText => observedService.State == ServiceState.Missing
         ? "Автозапуск: не установлен" : "Автозапуск: " + (observedService.Preset ?? "стратегия неизвестна");
     public string SelectedStrategyText => "Для следующего запуска: " + (SelectedPreset?.Name ?? "не выбрана");
-    public string RunningConfigurationText => lastManualSnapshot is { State: ManualSessionState.Running, Process.Executable: not null, Process.StartedAtUtcTicks: not null } manual
+    public string RunningConfigurationText => !manualObservationKnown ? "Пробный процесс: состояние неизвестно. Обновите состояние перед новым запуском."
+        : lastManualSnapshot is { State: ManualSessionState.Running, Process.Executable: not null, Process.StartedAtUtcTicks: not null } manual
         ? $"Подтверждённый пробный процесс: {manual.Strategy} · PID {manual.Process.Id}"
         : observedService.State == ServiceState.Stopped || observedService.State == ServiceState.Missing
             ? "Работающая конфигурация службы: процесс не запущен."

@@ -104,7 +104,7 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                             "Обнаружена незавершённая операция. Сначала проверьте и восстановите прежнее состояние; новые изменения службы заблокированы.");
                 }
                 catch (Exception error) when (Recoverable(error))
-                { return new(FlowsealActionOutcome.RecoveryRequired, state, "Журнал восстановления недоступен. Изменения запрещены: " + error.Message); }
+                { return new(FlowsealActionOutcome.RecoveryRequired, state, "Журнал восстановления недоступен. Изменения запрещены. " + ExplainFailure(error), ApplyError: error.Message); }
                 var current = Observe(request);
                 state = current.State;
                 if (before.State != current.State || before.Files != current.Files)
@@ -122,10 +122,10 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
         {
             if (activeRecord is { Phase: not OperationPhase.Completed })
                 return new(FlowsealActionOutcome.RecoveryRequired, SafeRecoveryRead(request.Root),
-                    "Операция или её журнал не завершены. Обновите состояние и выполните восстановление: " + ex.Message,
+                    "Операция или её журнал не завершены. " + ExplainFailure(ex),
                     FlowsealRecoveryOutcome.Failed, ApplyError: ex.Message);
             return new(FlowsealActionOutcome.InvalidRequest, state,
-                "Предварительная проверка не завершена; действие не начато. Проверьте доступ и исходные файлы: " + ex.Message);
+                "Предварительная проверка не завершена; действие не начато. " + ExplainFailure(ex), ApplyError: ex.Message);
         }
     }
 
@@ -203,7 +203,7 @@ public sealed partial class FlowsealAdapter(ICommandRunner runner, Func<Task<Ser
                 "Запуск и установка через оболочку пока недоступны: подготовка и соответствие выполнения Flowseal ещё не проверены. Используйте исходную поставку.");
         if ((readServiceState != null && mutationBackend == null) || !SupportsRecovery(state))
             return new(FlowsealActionOutcome.RecoveryRequired, state,
-                "Полный поддерживаемый снимок службы получить нельзя. Изменения не начаты: " + (state.ObservationError ?? "параметры восстановления не подтверждены."));
+                "Полный поддерживаемый снимок службы получить нельзя. Изменения не начаты: параметры восстановления не подтверждены. Проверьте права доступа и обновите состояние.", ApplyError: state.ObservationError);
         if (request.Action == FlowsealAction.ManualStart)
         {
             (manualBackend ?? new WindowsManualProcessBackend()).EnsureNoOtherWinws(state.Process);
